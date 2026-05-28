@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emst"
+version = "0.1.0"
+description = "Electricity Market Simulation Tool for sequential energy-exchange market simulation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Electricity Market Simulation Tool contributors" }
+]
+dependencies = [
+  "pulp>=2.7"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8"
+]
+
+[tool.setuptools.packages.find]
+include = ["mst*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
