@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from mst.core.bids import Bid, BlockBid, CircularBlockBid
-from mst.core.config import MarketStageConfig
-from mst.core.results import MarketResult
-from mst.core.time import MarketTime
-from mst.solvers import MarketClearingSolver, PulpMarketClearingSolver
+from emst.core.bids import Bid, BlockBid, CircularBlockBid
+from emst.core.config import MarketStageConfig
+from emst.core.results import MarketResult
+from emst.core.time import MarketTime
+from emst.solvers import MarketClearingSolver, PulpMarketClearingSolver
 
 
 class DAMMarket:

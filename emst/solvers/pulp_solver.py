@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from mst.core.bids import Bid, BlockBid, CircularBlockBid
-from mst.solvers.base import MarketClearingSolver
+from emst.core.bids import Bid, BlockBid, CircularBlockBid
+from emst.solvers.base import MarketClearingSolver
 
 
 class PulpMarketClearingSolver(MarketClearingSolver):

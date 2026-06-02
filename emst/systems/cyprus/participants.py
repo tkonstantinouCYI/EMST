@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from mst.core.participants import Asset, Participant
-from mst.core.time import MarketTime
+from emst.core.participants import Asset, Participant
+from emst.core.time import MarketTime
 
 
 def default_participants(market_time: MarketTime | None = None) -> list[Participant]:

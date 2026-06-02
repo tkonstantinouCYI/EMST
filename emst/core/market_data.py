@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mst.core.bids import Bid, BlockBid, CircularBlockBid
+from emst.core.bids import Bid, BlockBid, CircularBlockBid
 
 
 @dataclass(frozen=True)

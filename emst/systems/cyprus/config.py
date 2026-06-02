@@ -3,19 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from mst.core.config import MarketStageConfig
-from mst.core.contracts import ForwardContract, contracts_to_schedules
-from mst.core.participants import Participant
-from mst.core.scenarios import Scenario
-from mst.core.time import MarketTime
-from mst.systems.cyprus.participants import default_participants
-from mst.systems.cyprus.rules import (
+from emst.core.config import MarketStageConfig
+from emst.core.contracts import ForwardContract, contracts_to_schedules
+from emst.core.participants import Participant
+from emst.core.scenarios import Scenario
+from emst.core.time import MarketTime
+from emst.systems.cyprus.participants import default_participants
+from emst.systems.cyprus.rules import (
     DEFAULT_DEMAND_BID_PRICE,
     DEFAULT_PRICE_CAP,
     DEFAULT_PRICE_FLOOR,
     MARKET_SEQUENCE,
 )
-from mst.systems.cyprus.scenarios import predefined_scenarios
+from emst.systems.cyprus.scenarios import predefined_scenarios
 
 
 @dataclass(frozen=True)

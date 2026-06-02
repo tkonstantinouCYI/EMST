@@ -1,7 +1,7 @@
 import pytest
 
-from mst.core.bids import Bid, BlockBid
-from mst.solvers import PulpMarketClearingSolver
+from emst.core.bids import Bid, BlockBid
+from emst.solvers import PulpMarketClearingSolver
 
 
 class FixedLowPriceSolver(PulpMarketClearingSolver):

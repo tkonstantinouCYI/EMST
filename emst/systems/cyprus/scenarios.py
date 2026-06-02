@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from mst.core.scenarios import Scenario
-from mst.core.time import MarketTime
+from emst.core.scenarios import Scenario
+from emst.core.time import MarketTime
 
 
 def _profile(values: list[float], market_time: MarketTime) -> dict[int, float]:

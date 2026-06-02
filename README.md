@@ -9,7 +9,7 @@ The first publishable scope is:
 - Intraday Auctions (IDA1, IDA2, IDA3) as sequential residual-position auctions.
 - A predefined Cyprus configuration with simple participants, assets, forecasts, and one single-day scenario.
 
-MST v0.1 focuses on sequential energy-exchange price formation and inter-market arbitrage across Forward Market, Day-Ahead Market, and Intraday Auction markets. Balancing markets, reserve procurement, and real-time redispatch are planned future extensions.
+EMST v0.1 focuses on sequential energy-exchange price formation and inter-market arbitrage across Forward Market, Day-Ahead Market, and Intraday Auction markets. Balancing markets, reserve procurement, and real-time redispatch are planned future extensions.
 
 ## What Is Included
 
@@ -38,8 +38,8 @@ pip install -e ".[dev]"
 ## Quickstart
 
 ```python
-from mst.systems.cyprus import CyprusMarketConfig
-from mst.core.simulation import SequentialMarketSimulation
+from emst.systems.cyprus import CyprusMarketConfig
+from emst.core.simulation import SequentialMarketSimulation
 
 config = CyprusMarketConfig.default()
 scenario = config.load_scenario("high_solar_day")
@@ -70,7 +70,7 @@ Predefined Cyprus profiles are stored as hourly source values and expanded to MT
 Users can also add their own participants in code:
 
 ```python
-from mst.core.participants import Asset, Participant
+from emst.core.participants import Asset, Participant
 
 my_thermal = Participant(
     participant_id="MY_UNIT",
@@ -94,7 +94,7 @@ participants = config.load_participants(additional_participants=[my_thermal])
 Bilateral forward contracts are also defined in code:
 
 ```python
-from mst.core.contracts import ForwardContract
+from emst.core.contracts import ForwardContract
 
 contract = ForwardContract.fixed_quantity(
     contract_id="FM-MYUNIT-DEMAND",
@@ -128,7 +128,7 @@ profile_contract = ForwardContract.from_period_quantities(
 DAM block orders support minimum acceptance ratios and parent-child links:
 
 ```python
-from mst.core.bids import BlockBid
+from emst.core.bids import BlockBid
 
 parent = BlockBid(
     bid_id="PARENT",

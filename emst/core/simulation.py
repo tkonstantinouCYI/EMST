@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from mst.core.participants import Participant
-from mst.core.results import MarketResult, Positions, SequentialSimulationResult
-from mst.core.scenarios import Scenario
-from mst.markets.dam import DAMMarket
-from mst.markets.dam.model import generate_energy_exchange_bids
-from mst.markets.forward import ForwardMarket
-from mst.markets.intraday import IntradayAuctionMarket
+from emst.core.participants import Participant
+from emst.core.results import MarketResult, Positions, SequentialSimulationResult
+from emst.core.scenarios import Scenario
+from emst.markets.dam import DAMMarket
+from emst.markets.dam.model import generate_energy_exchange_bids
+from emst.markets.forward import ForwardMarket
+from emst.markets.intraday import IntradayAuctionMarket
 
 
 class SequentialMarketSimulation:

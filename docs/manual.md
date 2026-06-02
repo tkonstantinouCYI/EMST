@@ -52,7 +52,7 @@ pytest>=8
 ## 2. Package Structure
 
 ```text
-mst/
+emst/
   core/
   markets/
     forward/
@@ -71,15 +71,15 @@ The main design principle is separation between generic market logic and system-
 Generic modules live in:
 
 ```text
-mst/core
-mst/markets
-mst/solvers
+emst/core
+emst/markets
+emst/solvers
 ```
 
 Cyprus-specific defaults live in:
 
 ```text
-mst/systems/cyprus
+emst/systems/cyprus
 ```
 
 ## 3. Core Concepts
@@ -89,7 +89,7 @@ mst/systems/cyprus
 A participant represents a market actor.
 
 ```python
-from mst.core.participants import Participant
+from emst.core.participants import Participant
 
 participant = Participant(
     participant_id="GEN_A",
@@ -104,7 +104,7 @@ participant = Participant(
 An asset is a physical or commercial resource owned by a participant.
 
 ```python
-from mst.core.participants import Asset
+from emst.core.participants import Asset
 
 asset = Asset(
     asset_id="ccgt_a",
@@ -132,7 +132,7 @@ demand
 
 ```python
 from datetime import date
-from mst.core.time import MarketTime
+from emst.core.time import MarketTime
 
 market_time = MarketTime.single_day(date(2026, 6, 1), mtu_minutes=30)
 ```
@@ -152,7 +152,7 @@ The MTU length must divide a 24-hour day exactly.
 A scenario stores demand, solar, and wind profiles.
 
 ```python
-from mst.core.scenarios import Scenario
+from emst.core.scenarios import Scenario
 
 scenario = Scenario(
     scenario_id="example",
@@ -176,7 +176,7 @@ scenario.forecast_for("IDA1")
 The predefined Cyprus system is loaded with:
 
 ```python
-from mst.systems.cyprus import CyprusMarketConfig
+from emst.systems.cyprus import CyprusMarketConfig
 
 config = CyprusMarketConfig.default()
 ```
@@ -222,7 +222,7 @@ FM -> DAM -> IDA1 -> IDA2 -> IDA3
 Users can extend the Cyprus default participant set:
 
 ```python
-from mst.core.participants import Asset, Participant
+from emst.core.participants import Asset, Participant
 
 my_unit = Participant(
     participant_id="MY_UNIT",
@@ -265,7 +265,7 @@ Forward positions are represented as bilateral contracts.
 ### Fixed-Quantity Forward Contract
 
 ```python
-from mst.core.contracts import ForwardContract
+from emst.core.contracts import ForwardContract
 
 contract = ForwardContract.fixed_quantity(
     contract_id="FM-GEN-DEMAND",
@@ -303,7 +303,7 @@ Interpretation:
 Clear the Forward Market directly:
 
 ```python
-from mst.markets.forward import ForwardMarket
+from emst.markets.forward import ForwardMarket
 
 fm_result = ForwardMarket(config.market_time).clear(
     contracts=[contract],
@@ -325,7 +325,7 @@ DAM supports:
 ### Simple Bid
 
 ```python
-from mst.core.bids import Bid
+from emst.core.bids import Bid
 
 bid = Bid(
     bid_id="DAM-DEMAND-1",
@@ -350,7 +350,7 @@ Simple bids are continuously divisible between zero and their submitted quantity
 ### Block Bid
 
 ```python
-from mst.core.bids import BlockBid
+from emst.core.bids import BlockBid
 
 block = BlockBid(
     bid_id="DAM-BLOCK-1",
@@ -422,7 +422,7 @@ The child can only clear if the parent clears. The child acceptance ratio cannot
 Circular blocks are used for storage-style approximations.
 
 ```python
-from mst.core.bids import CircularBlockBid
+from emst.core.bids import CircularBlockBid
 
 circular = CircularBlockBid(
     family_id="BESS-CYCLE",
@@ -443,7 +443,7 @@ zero_sum
 DAM is cleared as a welfare-maximizing MILP.
 
 ```python
-from mst.markets.dam import DAMMarket
+from emst.markets.dam import DAMMarket
 
 dam = DAMMarket(config=config.dam, market_time=config.market_time)
 
@@ -491,7 +491,7 @@ Current IDA behavior:
 Example:
 
 ```python
-from mst.markets.intraday import IntradayAuctionMarket
+from emst.markets.intraday import IntradayAuctionMarket
 
 ida1 = IntradayAuctionMarket(
     name="IDA1",
@@ -509,8 +509,8 @@ IDA bids adjust positions relative to previous market outcomes for the same MTU.
 The high-level API runs FM, DAM, IDA1, IDA2, and IDA3:
 
 ```python
-from mst.core.simulation import SequentialMarketSimulation
-from mst.systems.cyprus import CyprusMarketConfig
+from emst.core.simulation import SequentialMarketSimulation
+from emst.systems.cyprus import CyprusMarketConfig
 
 config = CyprusMarketConfig.default()
 participants = config.load_participants()

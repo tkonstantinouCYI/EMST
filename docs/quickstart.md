@@ -9,8 +9,8 @@ pip install -e ".[dev]"
 Run a single-day Cyprus FM-DAM-IDA simulation:
 
 ```python
-from mst.systems.cyprus import CyprusMarketConfig
-from mst.core.simulation import SequentialMarketSimulation
+from emst.systems.cyprus import CyprusMarketConfig
+from emst.core.simulation import SequentialMarketSimulation
 
 config = CyprusMarketConfig.default()
 scenario = config.load_scenario("high_solar_day")
@@ -38,7 +38,7 @@ for participant_id, positions in results.final_positions.items():
 Participants are regular Python dataclasses:
 
 ```python
-from mst.core.participants import Asset, Participant
+from emst.core.participants import Asset, Participant
 
 new_solar = Participant(
     participant_id="USER_SOLAR",
@@ -79,7 +79,7 @@ Cyprus default profiles are expanded from hourly source values into MTU-energy q
 Forward contracts are declared between a delivery participant and an offtake participant. Positive quantities add to the delivery participant schedule and subtract from the offtake participant schedule.
 
 ```python
-from mst.core.contracts import ForwardContract
+from emst.core.contracts import ForwardContract
 
 contract = ForwardContract.fixed_quantity(
     contract_id="FM-USER-SOLAR-DEMAND",

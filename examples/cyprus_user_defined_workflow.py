@@ -5,13 +5,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mst.core.bids import Bid, BlockBid
-from mst.core.contracts import ForwardContract
-from mst.core.participants import Asset, Participant
-from mst.markets.dam import DAMMarket
-from mst.markets.forward import ForwardMarket
-from mst.markets.intraday import IntradayAuctionMarket
-from mst.systems.cyprus import CyprusMarketConfig
+from emst.core.bids import Bid, BlockBid
+from emst.core.contracts import ForwardContract
+from emst.core.participants import Asset, Participant
+from emst.markets.dam import DAMMarket
+from emst.markets.forward import ForwardMarket
+from emst.markets.intraday import IntradayAuctionMarket
+from emst.systems.cyprus import CyprusMarketConfig
 
 
 def make_participants() -> list[Participant]:

@@ -1,5 +1,5 @@
-from mst.systems.cyprus import CyprusMarketConfig
-from mst.core.participants import Asset, Participant
+from emst.systems.cyprus import CyprusMarketConfig
+from emst.core.participants import Asset, Participant
 
 
 def test_load_cyprus_config_participants_and_scenario():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from mst.core.bids import Bid, BlockBid, CircularBlockBid
+from emst.core.bids import Bid, BlockBid, CircularBlockBid
 
 
 class MarketClearingSolver(ABC):

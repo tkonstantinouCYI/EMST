@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mst.core.simulation import SequentialMarketSimulation
-from mst.systems.cyprus import CyprusMarketConfig
+from emst.core.simulation import SequentialMarketSimulation
+from emst.systems.cyprus import CyprusMarketConfig
 
 
 def main() -> None:

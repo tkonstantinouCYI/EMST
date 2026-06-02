@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from mst.core.bids import Bid, BlockBid, CircularBlockBid
-from mst.core.config import MarketStageConfig
-from mst.core.results import MarketResult
-from mst.core.time import MarketTime
-from mst.markets.dam.market import DAMMarket
-from mst.solvers import MarketClearingSolver
+from emst.core.bids import Bid, BlockBid, CircularBlockBid
+from emst.core.config import MarketStageConfig
+from emst.core.results import MarketResult
+from emst.core.time import MarketTime
+from emst.markets.dam.market import DAMMarket
+from emst.solvers import MarketClearingSolver
 
 
 class IntradayAuctionMarket:

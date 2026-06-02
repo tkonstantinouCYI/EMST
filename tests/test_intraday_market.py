@@ -1,6 +1,6 @@
-from mst.core.simulation import SequentialMarketSimulation
-from mst.markets.dam.model import generate_energy_exchange_bids
-from mst.systems.cyprus import CyprusMarketConfig
+from emst.core.simulation import SequentialMarketSimulation
+from emst.markets.dam.model import generate_energy_exchange_bids
+from emst.systems.cyprus import CyprusMarketConfig
 
 
 def test_sequential_simulation_runs_all_idas_and_final_positions():

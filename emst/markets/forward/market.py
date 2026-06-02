@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from mst.core.contracts import ForwardContract, contracts_to_schedules
-from mst.core.participants import Participant
-from mst.core.results import MarketResult
-from mst.core.time import MarketTime
+from emst.core.contracts import ForwardContract, contracts_to_schedules
+from emst.core.participants import Participant
+from emst.core.results import MarketResult
+from emst.core.time import MarketTime
 
 
 class ForwardMarket:

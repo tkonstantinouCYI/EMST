@@ -4,10 +4,10 @@ EMST separates generic market logic from system-specific configuration.
 
 ## Package Layout
 
-- `mst.core` contains dataclasses, time indexing, results, and sequential orchestration.
-- `mst.markets` contains generic market modules for FM, DAM, and intraday auctions.
-- `mst.solvers` contains solver abstractions and the PuLP implementation.
-- `mst.systems.cyprus` contains the first predefined system configuration.
+- `emst.core` contains dataclasses, time indexing, results, and sequential orchestration.
+- `emst.markets` contains generic market modules for FM, DAM, and intraday auctions.
+- `emst.solvers` contains solver abstractions and the PuLP implementation.
+- `emst.systems.cyprus` contains the first predefined system configuration.
 
 ## Market Sequence
 

@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["mst*"]
+include = ["emst*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
