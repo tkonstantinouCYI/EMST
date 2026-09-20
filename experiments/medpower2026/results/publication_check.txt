@@ -1,0 +1,1 @@
+Published driver: seven scenarios match recorded participant prices, volumes and final gaps within 1e-6. Maximum difference 0.

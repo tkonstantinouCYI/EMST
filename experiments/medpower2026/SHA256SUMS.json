@@ -1,0 +1,21 @@
+{
+  ".gitattributes": "f06202a408fef9b9ea69bb6b1cb8160dbb0378c5bb67a444d510d231813824c8",
+  ".gitignore": "3398f500543d64d4351109fe62cca14c6baa96c3aa844c116136c33f76967e78",
+  "audit_results.py": "559f57d3f92084f591a976e69da9ac50f99fda5a03f99b076eedc55ada556af5",
+  "case_inputs.json": "9b0a8f42591d32c4e0db4ff89684f93062f5f822c474f54886e440c78d9af1fe",
+  "plot_results.py": "aca6a9b3c11604e41f5bb3504277035f5c078c1b0a9b0222f2ce2ad302b44fd9",
+  "README.md": "bd22d95900a7193d187f6f65c20e481331537873409500150432694c0afe2e53",
+  "results/audit.txt": "1eaab624d0c34ade01f77a3196c5e4cd61c60a3778c230ca41cdd230ce1a0da5",
+  "results/contracts.csv": "d9b1f5732b93881936121c195915be077c8176bed68f57f179c288a8a8fab79b",
+  "results/environment.json": "7cfe15f5b09cfd0d2034e4728ae0dbf181a8b7c4dbf63fedd884dcdf996ae523",
+  "results/forecasts.csv": "d4fe2c5e87e22435df7f2e695ffce7e208541f32a8c2a1c9573837f84f1216db",
+  "results/participant_metrics.csv": "a015d0302b9e478ab53f9b17dfb590c9f19fa727dfde39528abeb7455d02ae82",
+  "results/participant_prices.csv": "3026e9acdf0b59b489b76c41c826a87f1be58bc7fffcdfa9c9862ff049b2e4c2",
+  "results/positions_prices.csv": "0b4189aad29cf5c04ab7f50fe1d2b1296cce536ab260239a961d8872639deee2",
+  "results/publication_check.txt": "63971164065cae1c36c3fd9ffbae4454d5beb7f9d6fb21478b8dbef122cc44f9",
+  "results/scenario_summary.csv": "9985bebe8f1bb471971a9624f8eaa380058f37fbe7640667c69c26c5a4b2a72e",
+  "results/timings.csv": "1303e69e0f3e004a8ea9bd57f390b0c43c26a7a1403bf8fb28ec404e2e157ae3",
+  "results/trade_ledger.csv": "7aa5bf1c122e4dbd5198e1de2df9a9152af30bccb375534b5413fdb24cf11ab4",
+  "results/verification.csv": "a0a3eff5fa548ae7a548654bd10cb3256e357ab61ac6f2a7304506a202d46991",
+  "run_experiments.py": "55551be3257bc413c36f368a99f96c32d06599fd2c4968fbc31b48fba806fde4"
+}

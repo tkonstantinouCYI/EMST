@@ -1,0 +1,14 @@
+{
+  "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+  "pulp": "3.3.2",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13420H",
+  "cbc": "Welcome to the CBC MILP Solver \nVersion: 2.10.3 \nBuild Date: Dec 15 2019 \n\nTotal time (CPU seconds):       0.00   (Wallclock seconds):       0.00\n",
+  "solver_settings": "PULP_CBC_CMD defaults; sequential runs; one unrecorded warm-up and five repeats per resolution",
+  "input_sha256": "9b0a8f42591d32c4e0db4ff89684f93062f5f822c474f54886e440c78d9af1fe",
+  "workbook_sha256": "33810488b91a5ef5d9651b70cfd636865d8c2e05ac8ba3491ada26fb300c19ae",
+  "timed_scope": "FM, bid construction, four clears including pricing/rejection, trade-ledger accounting and consistency checks; excludes input construction and file export",
+  "recorded_run_script_sha256": "d56ae8dd238345624b1b0d9fabdd2d59cd2d490ae52c5b1ef68a4183ad87120c",
+  "published_script_sha256": "55551be3257bc413c36f368a99f96c32d06599fd2c4968fbc31b48fba806fde4",
+  "publication_note": "The published driver changes its usage path, makes CPU metadata collection portable, and omits the machine-specific CBC command path. Clearing and metric computations are unchanged. Raw timings are from the original Windows run."
+}
