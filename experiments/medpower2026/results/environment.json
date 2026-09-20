@@ -8,7 +8,7 @@
   "input_sha256": "9b0a8f42591d32c4e0db4ff89684f93062f5f822c474f54886e440c78d9af1fe",
   "workbook_sha256": "33810488b91a5ef5d9651b70cfd636865d8c2e05ac8ba3491ada26fb300c19ae",
   "timed_scope": "FM, bid construction, four clears including pricing/rejection, trade-ledger accounting and consistency checks; excludes input construction and file export",
-  "recorded_run_script_sha256": "d56ae8dd238345624b1b0d9fabdd2d59cd2d490ae52c5b1ef68a4183ad87120c",
-  "published_script_sha256": "55551be3257bc413c36f368a99f96c32d06599fd2c4968fbc31b48fba806fde4",
-  "publication_note": "The published driver changes its usage path, makes CPU metadata collection portable, and omits the machine-specific CBC command path. Clearing and metric computations are unchanged. Raw timings are from the original Windows run."
+  "recorded_run_script_sha256": "cef5807a728f4ae1c294f6868f0e501b1bdb8653968b4d8f849f3bc258663fda",
+  "published_driver_sha256": "6bce206a2b1984a795f76ab01579c350481ff2e5fa1aa7700a8675cba1333a7a",
+  "driver_note": "Published driver changes only portable environment metadata and execution path. Bidding and clearing logic match the recorded run."
 }

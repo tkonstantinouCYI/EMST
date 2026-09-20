@@ -37,7 +37,7 @@ for stage in ('FM', 'DAM', 'IDA1', 'IDA2', 'IDA3'):
         key = 'buy_mwh' if pid in names[:3] else 'sell_mwh'
         values.append(100 * float(lookup['Baseline', pid, stage][key]) /
                       float(lookup['Baseline', pid, 'ALL'][key]))
-    ax.bar([p.replace('_', '-') for p in names], values, bottom=bottom, label=stage)
+    ax.bar([p.replace('_', '-') for p in names], values, bottom=bottom, label=stage.replace("IDA", "IA"))
     bottom = [b + v for b, v in zip(bottom, values)]
 assert all(abs(v - 100) < 1e-7 for v in bottom)
 ax.set_ylim(0, 100)
@@ -46,3 +46,24 @@ ax.legend(ncol=5, loc='upper center', bbox_to_anchor=(.5, 1.14))
 fig.savefig(out / 'market_mix.png', dpi=300)
 plt.close(fig)
 print('Wrote participant_prices.png and market_mix.png to', out)
+
+# Baseline DAM profiles, positive MW from half-hour MWh.
+forecast = list(csv.DictReader((HERE / 'results/forecasts.csv').open()))
+profile = {(r['participant'], int(r['period'])): float(r['target_mwh']) * 2
+           for r in forecast if r['scenario'] == 'Baseline' and r['stage'] == 'DAM'}
+hours = [(i - .5) / 2 for i in range(1, 49)]
+fig, ax = plt.subplots(figsize=(7, 4), layout='constrained')
+for pid in names[:3]:
+    ax.plot(hours, [-profile[pid, i] for i in range(1,49)], label=pid)
+ax.set(xlabel='Hour', ylabel='Demand (MW)', xlim=(0,24), ylim=(0,None))
+ax.legend(); ax.grid(alpha=.3)
+fig.savefig(out / 'baseline_demand_profiles.png', dpi=300)
+plt.close(fig)
+fig, axes = plt.subplots(1,2,figsize=(8,4),layout='constrained')
+for ax, pid, match in zip(axes, ('PV_C','W_C'), ('PV_A','W_A')):
+    assert all(profile[pid,i] == profile[match,i] for i in range(1,49))
+    ax.plot(hours, [profile[pid,i] for i in range(1,49)])
+    ax.set(title=pid.replace('_','-')+' / '+match.replace('_','-'), xlabel='Hour', ylabel='Generation (MW)', xlim=(0,24), ylim=(0,None))
+    ax.grid(alpha=.3)
+fig.savefig(out / 'baseline_res_profiles.png', dpi=300)
+plt.close(fig)

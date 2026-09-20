@@ -1,6 +1,6 @@
 # Sequential-market participant-price experiments
 
-This directory contains the code, synthetic inputs and recorded results for the participant-price case study. The release `medpower2026-paper33-v1` pins the experimental materials. The manuscript PDF and LaTeX source are not distributed here. A reference to the paper will be added after publication.
+This directory contains the code, synthetic inputs and recorded results for the participant-price case study. The release `medpower2026-paper33-v2` pins the experimental materials. The manuscript PDF and LaTeX source are not distributed here. A reference to the paper will be added after publication.
 
 ## Reproduce the results
 
@@ -11,6 +11,7 @@ python -m pip install -e ".[dev]"
 python -m pip install pulp==3.3.2
 python experiments/medpower2026/run_experiments.py
 python experiments/medpower2026/audit_results.py
+python experiments/medpower2026/audit_auction_prices.py
 python -m pytest -q
 ```
 
@@ -28,6 +29,10 @@ To audit the supplied results without rerunning the solver, run only `audit_resu
 - Seven re-cleared cases are baseline, low RES, high RES, high demand, no forecast revision, doubled revision and reversed revision. They are perturbations of one illustrative day, not seven observed days. IDA2 and IDA3 synthetically reverse part of the original IDA1 update.
 - All three IDAs can trade every delivery MTU. Network constraints, realistic gate closures, full unit commitment and balancing settlement are absent.
 
+Supplier purchases bid at the synthetic ceiling of 500 EUR/MWh in DAM and every IA. Supplier resales and renewable sales bid at 0.9 times the DAM MTU price in IAs. Renewable buybacks retain 1.1 times that price. This ceiling is a modelling assumption, not a regulatory price-limit claim.
+
+Auction-wide VWAPs count accepted purchases once and exclude MTUs with volume at or below 1e-4 MWh. No active MTUs gives a blank VWAP. The audit exports supplier purchase shortfalls separately from excess purchases and renewable absolute gaps. All final supplier shortfalls are below 3e-6 MWh in the recorded scenarios. Internal data stage names remain IDA1–IDA3, corresponding to IA1–IA3 in the paper.
+
 ## Inputs, provenance and limits
 
 `case_inputs.json` preserves a value-only snapshot of the original case workbook and its SHA256 hash. The source workbook's aggregate profiles were transcribed from a user-supplied image and fleet inputs were user-provided. They are not independently calibrated historical data. Original snapshot labels such as `cyprus_actual_single_day` refer to the source workbook, not a validation claim. The driver constructs the expanded twelve-participant case explicitly and does not use the snapshot's original participant list or forward schedules.
@@ -41,12 +46,14 @@ The paper reports gross purchase and sales prices separately, along with volumes
 | File | Contents |
 | --- | --- |
 | `run_experiments.py` | Participant construction, seven scenarios, FM-DAM-IDA1-IDA2-IDA3 clearing, checks and timing |
+| `audit_auction_prices.py` | Independent auction VWAP and disaggregated position-gap audit |
+| `results/auction_vwaps.csv`, `position_gap_audit.csv` | Auction prices and separated supplier shortfalls/excess purchases |
 | `audit_results.py` | Independent transaction, weighted-price and matched-profile audit |
 | `plot_results.py` | Standalone PNG participant price and volume-mix figures |
 | `results/forecasts.csv`, `contracts.csv` | Explicit scenario forecasts and fixed priced contracts |
 | `results/trade_ledger.csv` | Participant, stage, MTU, side, accepted MWh, price and order identifier |
 | `results/participant_metrics.csv` | Twelve participants, seven scenarios, ALL/FM/DAM/IDA1-IDA3 summaries |
-| `results/participant_prices.csv` | The 49 supplier-buy and renewable-sell prices in Figure 2 |
+| `results/participant_prices.csv` | The 49 supplier-buy and renewable-sell prices in the participant-price figure |
 | `results/scenario_summary.csv`, `positions_prices.csv` | Market outcomes and cumulative positions |
 | `results/verification.csv`, `audit.txt` | Recorded checks |
 | `results/timings.csv`, `environment.json` | Raw repetitions and recorded environment/provenance |

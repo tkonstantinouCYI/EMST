@@ -32,6 +32,7 @@ from emst.markets.intraday import IntradayAuctionMarket
 
 HERE = Path(__file__).resolve().parent
 DATA = json.loads((HERE / 'case_inputs.json').read_text())
+SUPPLIER_BUY_PRICE = 500.0  # Synthetic case-study bid ceiling, EUR/MWh.
 STAGES = ('DAM', 'IDA1', 'IDA2', 'IDA3')
 # name, demand multiplier, RES multiplier, forecast-revision multiplier
 SCENARIOS = [('Baseline',1,1,1), ('Low RES',1,.7,1), ('High RES',1,1.3,1),
@@ -128,6 +129,8 @@ def run(minutes=30, dm=1, rm=1, revision=1):
                 delta=values[p]-cumulative.get(pid,{}).get(p,0)
                 if abs(delta)>1e-9:
                     price=(0 if delta>0 else 500) if market=='DAM' else reference*(.9 if delta>0 else 1.1)
+                    if pid in FOCAL[:3] and delta < 0:
+                        price = SUPPLIER_BUY_PRICE
                     bids.append(Bid(f'{market}_{pid}_{p}',pid,market,p,'sell' if delta>0 else 'buy',abs(delta),price))
             for u in UNITS:
                 pid=u['participant_id']; cap=u['capacity_mw']*mt.mtu_hours
