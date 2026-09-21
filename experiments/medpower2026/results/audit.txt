@@ -1,2 +1,2 @@
-PASS: 10222 trade rows; 504 participant/stage metrics; matched RES and fixed contracts.
-Maximum stage/MTU cash residual EUR: 0.0015086021976458142
+PASS: 13794 trade rows; 504 participant/stage metrics; matched RES and fixed contracts.
+Maximum stage/MTU cash residual EUR: 0.0015086021903698565

@@ -1,0 +1,21 @@
+participant,period,side,remaining_mwh,offer_price,remaining_opposite_mwh,eligible_opposite_mwh,reason
+COM,3,sell,1.0815204620743941,140.553,247.5,0,price mismatch
+COM,4,sell,1.0904264006210909,140.553,247.5,0,price mismatch
+COM,5,sell,3.618392556909555,140.553,247.5,0,price mismatch
+COM,6,sell,3.682272829788438,140.553,247.5,0,price mismatch
+IND,3,sell,1.3611200831541197,140.553,247.5,0,price mismatch
+IND,4,sell,1.3611203937890366,140.553,247.5,0,price mismatch
+IND,5,sell,4.872531451707701,140.553,247.5,0,price mismatch
+IND,6,sell,4.8725329027057285,140.553,247.5,0,price mismatch
+RESI,3,sell,2.4735093866336797,140.553,247.5,0,price mismatch
+RESI,4,sell,2.4646042648807196,140.553,247.5,0,price mismatch
+RESI,5,sell,8.035673230926562,140.553,247.5,0,price mismatch
+RESI,6,sell,7.971796484588822,140.553,247.5,0,price mismatch
+W_A,3,sell,1.3992292657937329,140.553,247.5,0,price mismatch
+W_A,4,sell,1.3992294020794027,140.553,247.5,0,price mismatch
+W_A,5,sell,4.415923156389923,140.553,247.5,0,price mismatch
+W_A,6,sell,4.415923167620351,140.553,247.5,0,price mismatch
+W_C,3,sell,1.399229261594093,140.553,247.5,0,price mismatch
+W_C,4,sell,1.3992293978797639,140.553,247.5,0,price mismatch
+W_C,5,sell,4.415923134066235,140.553,247.5,0,price mismatch
+W_C,6,sell,4.415923145296662,140.553,247.5,0,price mismatch

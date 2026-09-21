@@ -4,5 +4,7 @@
   "workbook_sha256": "33810488b91a5ef5d9651b70cfd636865d8c2e05ac8ba3491ada26fb300c19ae",
   "snapshot_filename": "case_inputs.json",
   "version_note": "Version 1 identifies this hash-pinned snapshot, not an externally issued workbook version.",
-  "origin": "Profiles transcribed from a user-supplied image and asset inputs supplied by the user. Not independently validated operator records."
+  "origin": "Profiles transcribed from a user-supplied image and asset inputs supplied by the user. Not independently validated operator records.",
+  "fleet_note": "User-supplied aggregates include VAS_ST_H 390 MW and DKL_ICE_H 105 MW, without Moni. Not reconciled with the separate Cyprus_Grid.sqlite/FlexTool fleet.",
+  "date_note": "2025-01-01 is a delivery label, not a calibrated working-day or public-holiday demand profile."
 }

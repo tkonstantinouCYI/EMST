@@ -1,0 +1,6 @@
+{
+  "balance": "buy - sell = RHS",
+  "dual": 40.0,
+  "central_difference": 40.000000000020464,
+  "rhs_step": 0.001
+}

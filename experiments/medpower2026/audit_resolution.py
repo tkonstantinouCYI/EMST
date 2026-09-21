@@ -17,7 +17,7 @@ for minutes in (60,30,15):
    bid_surplus_eur=results[stage].social_welfare,
    rejected_blocks=len(results[stage].metadata.get('rejected_paradoxical_blocks',[]))))
  for r in results['FM'].metadata['participant_metrics']:
-  if r['stage']=='ALL' and r['participant'] in FOCAL:
+  if r['stage']=='ALL':
    participants.append(dict(mtu_minutes=minutes,**{k:r[k] for k in ('participant','buy_mwh','sell_mwh','buy_vwap','sell_vwap','final_gap_mwh')}))
 for name,rows in [('resolution_auctions.csv',auction),('resolution_participants.csv',participants)]:
  with (HERE/'results'/name).open('w',newline='') as f:

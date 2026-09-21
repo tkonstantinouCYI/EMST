@@ -1,0 +1,29 @@
+policy,participant,side,change_from_selected_policy
+CBC allocation,IND,buy,-0.00021379847947855524
+CBC allocation,IND,sell,-2.1871070139765436
+CBC allocation,COM,buy,0.004462032177258379
+CBC allocation,COM,sell,-2.324956421905938
+CBC allocation,RESI,buy,-0.01646134202925964
+CBC allocation,RESI,sell,-0.4442481409694494
+CBC allocation,PV_C,buy,-4.451491123354714
+CBC allocation,PV_C,sell,-2.6616789636676828
+CBC allocation,PV_A,buy,-7.819742401426765
+CBC allocation,PV_A,sell,-0.8355139726293146
+CBC allocation,W_C,buy,-3.119108109093048
+CBC allocation,W_C,sell,0.33530210635444746
+CBC allocation,W_A,buy,-1.2773672213276086
+CBC allocation,W_A,sell,0.0015234062476849886
+Pro rata only,IND,buy,0.0
+Pro rata only,IND,sell,0.000490679646532044
+Pro rata only,COM,buy,0.0
+Pro rata only,COM,sell,0.0006552802059331952
+Pro rata only,RESI,buy,0.0
+Pro rata only,RESI,sell,0.0005562937196827988
+Pro rata only,PV_C,buy,9.100592942451726
+Pro rata only,PV_C,sell,-2.8458754083951163
+Pro rata only,PV_A,buy,9.100593049292087
+Pro rata only,PV_A,sell,-0.8353688359734974
+Pro rata only,W_C,buy,11.510674544536187
+Pro rata only,W_C,sell,0.0
+Pro rata only,W_A,buy,11.510674543397215
+Pro rata only,W_A,sell,0.0

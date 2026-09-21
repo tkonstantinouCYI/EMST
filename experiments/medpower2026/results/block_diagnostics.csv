@@ -1,0 +1,101 @@
+variant,block,acceptance,rejected
+Baseline,DAM_BLOCK_DKL_ICE_H_1,1.0,False
+Baseline,DAM_BLOCK_DKL_ICE_H_13,1.0,False
+Baseline,DAM_BLOCK_DKL_ICE_H_25,1.0,False
+Baseline,DAM_BLOCK_DKL_ICE_H_37,1.0,False
+Baseline,DAM_BLOCK_DKL_ST_H_1,0.0,False
+Baseline,DAM_BLOCK_DKL_ST_H_13,0.0,False
+Baseline,DAM_BLOCK_DKL_ST_H_25,0.0,False
+Baseline,DAM_BLOCK_DKL_ST_H_37,0.0,False
+Baseline,DAM_BLOCK_VAS_CCGT_D_1,0.0,False
+Baseline,DAM_BLOCK_VAS_CCGT_D_13,0.0,False
+Baseline,DAM_BLOCK_VAS_CCGT_D_25,0.0,False
+Baseline,DAM_BLOCK_VAS_CCGT_D_37,0.0,False
+Baseline,DAM_BLOCK_VAS_GT_D_1,0.0,False
+Baseline,DAM_BLOCK_VAS_GT_D_13,0.0,False
+Baseline,DAM_BLOCK_VAS_GT_D_25,0.0,False
+Baseline,DAM_BLOCK_VAS_GT_D_37,0.0,False
+Baseline,DAM_BLOCK_VAS_ST_H_1,1.0,False
+Baseline,DAM_BLOCK_VAS_ST_H_13,0.0,False
+Baseline,DAM_BLOCK_VAS_ST_H_25,0.0,True
+Baseline,DAM_BLOCK_VAS_ST_H_37,1.0,False
+Low RES,DAM_BLOCK_DKL_ICE_H_1,1.0,False
+Low RES,DAM_BLOCK_DKL_ICE_H_13,1.0,False
+Low RES,DAM_BLOCK_DKL_ICE_H_25,1.0,False
+Low RES,DAM_BLOCK_DKL_ICE_H_37,1.0,False
+Low RES,DAM_BLOCK_DKL_ST_H_1,0.0,False
+Low RES,DAM_BLOCK_DKL_ST_H_13,0.0,False
+Low RES,DAM_BLOCK_DKL_ST_H_25,0.0,False
+Low RES,DAM_BLOCK_DKL_ST_H_37,0.0,False
+Low RES,DAM_BLOCK_VAS_CCGT_D_1,0.0,False
+Low RES,DAM_BLOCK_VAS_CCGT_D_13,0.0,False
+Low RES,DAM_BLOCK_VAS_CCGT_D_25,0.0,False
+Low RES,DAM_BLOCK_VAS_CCGT_D_37,0.0,False
+Low RES,DAM_BLOCK_VAS_GT_D_1,0.0,False
+Low RES,DAM_BLOCK_VAS_GT_D_13,0.0,False
+Low RES,DAM_BLOCK_VAS_GT_D_25,0.0,False
+Low RES,DAM_BLOCK_VAS_GT_D_37,0.0,False
+Low RES,DAM_BLOCK_VAS_ST_H_1,1.0,False
+Low RES,DAM_BLOCK_VAS_ST_H_13,0.0,True
+Low RES,DAM_BLOCK_VAS_ST_H_25,1.0,False
+Low RES,DAM_BLOCK_VAS_ST_H_37,1.0,False
+Markup 5%,DAM_BLOCK_DKL_ICE_H_1,1.0,False
+Markup 5%,DAM_BLOCK_DKL_ICE_H_13,1.0,False
+Markup 5%,DAM_BLOCK_DKL_ICE_H_25,1.0,False
+Markup 5%,DAM_BLOCK_DKL_ICE_H_37,1.0,False
+Markup 5%,DAM_BLOCK_DKL_ST_H_1,0.0,False
+Markup 5%,DAM_BLOCK_DKL_ST_H_13,0.0,False
+Markup 5%,DAM_BLOCK_DKL_ST_H_25,0.0,False
+Markup 5%,DAM_BLOCK_DKL_ST_H_37,0.0,False
+Markup 5%,DAM_BLOCK_VAS_CCGT_D_1,0.0,False
+Markup 5%,DAM_BLOCK_VAS_CCGT_D_13,0.0,False
+Markup 5%,DAM_BLOCK_VAS_CCGT_D_25,0.0,False
+Markup 5%,DAM_BLOCK_VAS_CCGT_D_37,0.0,False
+Markup 5%,DAM_BLOCK_VAS_GT_D_1,0.0,False
+Markup 5%,DAM_BLOCK_VAS_GT_D_13,0.0,False
+Markup 5%,DAM_BLOCK_VAS_GT_D_25,0.0,False
+Markup 5%,DAM_BLOCK_VAS_GT_D_37,0.0,False
+Markup 5%,DAM_BLOCK_VAS_ST_H_1,1.0,False
+Markup 5%,DAM_BLOCK_VAS_ST_H_13,0.0,False
+Markup 5%,DAM_BLOCK_VAS_ST_H_25,0.0,True
+Markup 5%,DAM_BLOCK_VAS_ST_H_37,1.0,False
+Markup 20%,DAM_BLOCK_DKL_ICE_H_1,1.0,False
+Markup 20%,DAM_BLOCK_DKL_ICE_H_13,1.0,False
+Markup 20%,DAM_BLOCK_DKL_ICE_H_25,1.0,False
+Markup 20%,DAM_BLOCK_DKL_ICE_H_37,1.0,False
+Markup 20%,DAM_BLOCK_DKL_ST_H_1,0.0,False
+Markup 20%,DAM_BLOCK_DKL_ST_H_13,0.0,False
+Markup 20%,DAM_BLOCK_DKL_ST_H_25,0.0,False
+Markup 20%,DAM_BLOCK_DKL_ST_H_37,0.0,False
+Markup 20%,DAM_BLOCK_VAS_CCGT_D_1,0.0,False
+Markup 20%,DAM_BLOCK_VAS_CCGT_D_13,0.0,False
+Markup 20%,DAM_BLOCK_VAS_CCGT_D_25,0.0,False
+Markup 20%,DAM_BLOCK_VAS_CCGT_D_37,0.0,False
+Markup 20%,DAM_BLOCK_VAS_GT_D_1,0.0,False
+Markup 20%,DAM_BLOCK_VAS_GT_D_13,0.0,False
+Markup 20%,DAM_BLOCK_VAS_GT_D_25,0.0,False
+Markup 20%,DAM_BLOCK_VAS_GT_D_37,0.0,False
+Markup 20%,DAM_BLOCK_VAS_ST_H_1,1.0,False
+Markup 20%,DAM_BLOCK_VAS_ST_H_13,0.0,False
+Markup 20%,DAM_BLOCK_VAS_ST_H_25,0.0,True
+Markup 20%,DAM_BLOCK_VAS_ST_H_37,1.0,False
+Pro rata only,DAM_BLOCK_DKL_ICE_H_1,1.0,False
+Pro rata only,DAM_BLOCK_DKL_ICE_H_13,1.0,False
+Pro rata only,DAM_BLOCK_DKL_ICE_H_25,1.0,False
+Pro rata only,DAM_BLOCK_DKL_ICE_H_37,1.0,False
+Pro rata only,DAM_BLOCK_DKL_ST_H_1,0.0,False
+Pro rata only,DAM_BLOCK_DKL_ST_H_13,0.0,False
+Pro rata only,DAM_BLOCK_DKL_ST_H_25,0.0,False
+Pro rata only,DAM_BLOCK_DKL_ST_H_37,0.0,False
+Pro rata only,DAM_BLOCK_VAS_CCGT_D_1,0.0,False
+Pro rata only,DAM_BLOCK_VAS_CCGT_D_13,0.0,False
+Pro rata only,DAM_BLOCK_VAS_CCGT_D_25,0.0,False
+Pro rata only,DAM_BLOCK_VAS_CCGT_D_37,0.0,False
+Pro rata only,DAM_BLOCK_VAS_GT_D_1,0.0,False
+Pro rata only,DAM_BLOCK_VAS_GT_D_13,0.0,False
+Pro rata only,DAM_BLOCK_VAS_GT_D_25,0.0,False
+Pro rata only,DAM_BLOCK_VAS_GT_D_37,0.0,False
+Pro rata only,DAM_BLOCK_VAS_ST_H_1,1.0,False
+Pro rata only,DAM_BLOCK_VAS_ST_H_13,0.0,False
+Pro rata only,DAM_BLOCK_VAS_ST_H_25,0.0,True
+Pro rata only,DAM_BLOCK_VAS_ST_H_37,1.0,False

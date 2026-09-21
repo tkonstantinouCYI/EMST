@@ -62,8 +62,18 @@ plt.close(fig)
 fig, axes = plt.subplots(1,2,figsize=(8,4),layout='constrained')
 for ax, pid, match in zip(axes, ('PV_C','W_C'), ('PV_A','W_A')):
     assert all(profile[pid,i] == profile[match,i] for i in range(1,49))
-    ax.plot(hours, [profile[pid,i] for i in range(1,49)])
+    ax.plot(hours, [profile[pid,i] for i in range(1,49)], label='DAM')
+    ia1={int(r['period']):float(r['target_mwh'])*2 for r in forecast if r['scenario']=='Baseline' and r['stage']=='IDA1' and r['participant']==pid}
+    ax.plot(hours, [ia1[i] for i in range(1,49)], linestyle='--', label='IA1')
+    ax.legend()
     ax.set(title=pid.replace('_','-')+' / '+match.replace('_','-'), xlabel='Hour', ylabel='Generation (MW)', xlim=(0,24), ylim=(0,None))
     ax.grid(alpha=.3)
 fig.savefig(out / 'baseline_res_profiles.png', dpi=300)
 plt.close(fig)
+
+with (HERE/'results/participant_prices.csv').open('w',newline='') as f:
+    w=csv.DictWriter(f,fieldnames=['scenario','participant','side','price_eur_mwh']);w.writeheader()
+    for pid in names:
+        side='buy' if pid in names[:3] else 'sell'
+        for scenario in scenarios:
+            w.writerow(dict(scenario=scenario,participant=pid,side=side,price_eur_mwh=lookup[scenario,pid,'ALL'][side+'_vwap']))

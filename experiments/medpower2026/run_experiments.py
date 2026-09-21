@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 import pulp
+from tie_policy import CaseStudySolver
 from emst.core.bids import Bid, BlockBid
 from emst.core.contracts import ForwardContract
 from emst.core.participants import Participant
@@ -104,7 +105,7 @@ def inputs(minutes, dm, rm, revision):
             period_quantities=resample(values,minutes),price=price))
     return forecasts,contracts
 
-def run(minutes=30, dm=1, rm=1, revision=1):
+def run(minutes=30, dm=1, rm=1, revision=1, markup=.10, tie_policy="max_volume_pro_rata", reverse=False):
     forecasts,contracts=inputs(minutes,dm,rm,revision)
     mt=MarketTime.single_day(date(2025,1,1),mtu_minutes=minutes)
     started=time.perf_counter()
@@ -128,7 +129,7 @@ def run(minutes=30, dm=1, rm=1, revision=1):
             for pid,values in forecasts[market].items():
                 delta=values[p]-cumulative.get(pid,{}).get(p,0)
                 if abs(delta)>1e-9:
-                    price=(0 if delta>0 else 500) if market=='DAM' else reference*(.9 if delta>0 else 1.1)
+                    price=(0 if delta>0 else 500) if market=='DAM' else reference*((1-markup) if delta>0 else (1+markup))
                     if pid in FOCAL[:3] and delta < 0:
                         price = SUPPLIER_BUY_PRICE
                     bids.append(Bid(f'{market}_{pid}_{p}',pid,market,p,'sell' if delta>0 else 'buy',abs(delta),price))
@@ -139,7 +140,7 @@ def run(minutes=30, dm=1, rm=1, revision=1):
                     bids.append(Bid(f'{market}_{pid}_FLEX_{p}',pid,market,p,'sell',.7*cap,cost))
                 else:
                     if current>1e-9: bids.append(Bid(f'{market}_{pid}_BUYBACK_{p}',pid,market,p,'buy',current,cost))
-                    if cap-current>1e-9: bids.append(Bid(f'{market}_{pid}_UP_{p}',pid,market,p,'sell',cap-current,1.1*reference))
+                    if cap-current>1e-9: bids.append(Bid(f'{market}_{pid}_UP_{p}',pid,market,p,'sell',cap-current,(1+markup)*reference))
         if market=='DAM':
             n=360//minutes
             for u in UNITS:
@@ -147,9 +148,9 @@ def run(minutes=30, dm=1, rm=1, revision=1):
                     periods=tuple(range(start,start+n)); pid=u['participant_id']
                     blocks.append(BlockBid(f'DAM_BLOCK_{pid}_{start}',pid,market,periods,
                         (.3*u['capacity_mw']*mt.mtu_hours,)*n,(u['marginal_cost_eur_mwh'],)*n))
-            result=DAMMarket(market_time=mt).clear(bids=bids,block_bids=blocks)
+            result=DAMMarket(market_time=mt, solver=CaseStudySolver(tie_policy)).clear(bids=list(reversed(bids)) if reverse else bids,block_bids=blocks)
         else:
-            result=IntradayAuctionMarket(name=market,market_time=mt).clear(bids=bids)
+            result=IntradayAuctionMarket(name=market,market_time=mt, solver=CaseStudySolver(tie_policy)).clear(bids=list(reversed(bids)) if reverse else bids)
         stage_times[market]=time.perf_counter()-stage_start
         results[market]=result
         # Independent reconstruction from bid acceptances checks signed position accounting.
@@ -259,13 +260,10 @@ def main():
             timings.append(dict(mtu_minutes=minutes,periods=1440//minutes,repeat=repeat,total_seconds=elapsed,**st))
     write_csv('scenario_summary.csv',summary); write_csv('positions_prices.csv',traces)
     write_csv('verification.csv',verification); write_csv('timings.csv',timings)
-    cpu=platform.processor() or 'unavailable'
-    if sys.platform=='win32':
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
-            cpu=winreg.QueryValueEx(key,'ProcessorNameString')[0].strip()
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
+        cpu=winreg.QueryValueEx(key,'ProcessorNameString')[0].strip()
     cbc=subprocess.run([pulp.PULP_CBC_CMD().path,'-stop'],capture_output=True,text=True).stdout
-    cbc='\n'.join(line for line in cbc.splitlines() if not line.startswith('command line - '))
     environment=dict(python=sys.version,pulp=pulp.__version__,platform=platform.platform(),cpu=cpu,
         cbc=cbc,solver_settings='PULP_CBC_CMD defaults; sequential runs; one unrecorded warm-up and five repeats per resolution',
         input_sha256=hashlib.sha256((HERE/'case_inputs.json').read_bytes()).hexdigest(),
