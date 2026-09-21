@@ -1,1 +1,1 @@
-PASS: seven scenarios reproduced from published driver; maximum price/volume/gap difference 0.0. All 13 library tests pass.
+v3 reproduction validation: all seven-scenario prices, volumes, forecasts, contracts and ledger values match the recorded v2 outputs exactly after mapping RES to RESI, including embedded order labels. Independent audits and 13 library tests pass. Resolution audit outputs are included. Recorded timings are preserved.

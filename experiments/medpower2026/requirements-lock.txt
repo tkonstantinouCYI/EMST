@@ -1,0 +1,19 @@
+# Tested with CPython 3.14.7, Windows 11, bundled CBC 2.10.3.
+# Exact Python dependency versions. Platform and CBC details: results/environment.json.
+PuLP==3.3.2
+pytest==9.0.3
+Pygments==2.20.0
+colorama==0.4.6
+iniconfig==2.3.0
+pluggy==1.6.0
+matplotlib==3.11.2
+numpy==2.5.3
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.65.0
+kiwisolver==1.5.1
+packaging==26.3
+pillow==12.3.0
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+six==1.17.0

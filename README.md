@@ -186,4 +186,4 @@ See [docs/manual.md](docs/manual.md) for the full library manual.
 
 ## Sequential-market experiments
 
-The [participant-price case study](experiments/medpower2026/README.md) contains three supplier demand profiles, matched contracted and auction-only PV/wind portfolios, seven scenarios and recorded results. A [tagged release](https://github.com/tkonstantinouCYI/EMST/releases/tag/medpower2026-paper33-v2) provides the code and data. A reference to the paper will be added after publication.
+The [participant-price case study](experiments/medpower2026/README.md) contains three supplier demand profiles, matched contracted and auction-only PV/wind portfolios, seven scenarios and recorded results. A [tagged release](https://github.com/tkonstantinouCYI/EMST/releases/tag/medpower2026-paper33-v3) provides the code and data. A reference to the paper will be added after publication.

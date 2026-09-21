@@ -40,14 +40,14 @@ SCENARIOS = [('Baseline',1,1,1), ('Low RES',1,.7,1), ('High RES',1,1.3,1),
              ('Double revision',1,1,2), ('Reverse revision',1,1,-1)]
 UNITS = sorted([r for r in DATA['Assets'] if r['asset_type']=='thermal'],
                key=lambda r:r['marginal_cost_eur_mwh'])
-FOCAL = ('IND','COM','RES','PV_C','PV_A','W_C','W_A')
+FOCAL = ('IND','COM','RESI','PV_C','PV_A','W_C','W_A')
 PARTICIPANTS = [Participant(u['participant_id'],u['participant_id'],'producer',[]) for u in UNITS]
 PARTICIPANTS += [Participant(pid,pid,'supplier' if pid in FOCAL[:3] else 'producer',[]) for pid in FOCAL]
 # Fixed baseline delivery profiles; shares refer to ONE half-size RES portfolio.
 CONTRACTS = [('PV_COM','PV_C','COM','pv',.60,85.),
-             ('PV_RES','PV_C','RES','pv',.10,90.),
+             ('PV_RESI','PV_C','RESI','pv',.10,90.),
              ('W_IND','W_C','IND','wind',.60,100.),
-             ('W_RES','W_C','RES','wind',.10,105.)]
+             ('W_RESI','W_C','RESI','wind',.10,105.)]
 
 def demand_shares():
     mean=sum(r['demand_dam_mwh'] for r in DATA['TimeSeries'])/48
@@ -60,7 +60,7 @@ def demand_shares():
         residential=.35+.65*math.exp(-.5*((hour-20)/3)**2)
         shares['IND'][p]=industrial
         shares['COM'][p]=(1-industrial)*commercial/(commercial+residential)
-        shares['RES'][p]=(1-industrial)*residential/(commercial+residential)
+        shares['RESI'][p]=(1-industrial)*residential/(commercial+residential)
         assert abs(sum(shares[pid][p] for pid in shares)-1)<1e-12
     return shares
 SHARES=demand_shares()

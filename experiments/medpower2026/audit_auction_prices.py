@@ -23,10 +23,10 @@ for scenario in dict.fromkeys(r['scenario'] for r in t):
     check=sum(float(r['quantity_mwh'])*float(r['price_eur_mwh']) for r in trades)/q
     assert abs(vwap-check)<1e-4,(scenario,stage,side,vwap,check)
   vwaps.append(dict(scenario=scenario,stage=stage,vwap_eur_mwh=vwap,active_volume_mwh=vol,active_mtus=len(active)))
- for pid in ['IND','COM','RES','PV_C','PV_A','W_C','W_A']:
+ for pid in ['IND','COM','RESI','PV_C','PV_A','W_C','W_A']:
   rows=[r for r in t if r['scenario']==scenario and r['stage']=='IDA3']
   differences=[float(r[pid])-f[scenario,pid,r['period']] for r in rows]
-  supplier=pid in ['IND','COM','RES']
+  supplier=pid in ['IND','COM','RESI']
   gaps.append(dict(scenario=scenario,participant=pid,absolute_gap_mwh=sum(abs(x) for x in differences),supplier_shortfall_mwh=sum(max(0,x) for x in differences) if supplier else '',supplier_excess_purchase_mwh=sum(max(0,-x) for x in differences) if supplier else ''))
 write('auction_vwaps.csv',vwaps);write('position_gap_audit.csv',gaps)
 print('PASS: auction VWAPs checked against both ledger sides; supplier gaps separated.')

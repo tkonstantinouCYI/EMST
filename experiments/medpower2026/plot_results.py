@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).parent
 rows = list(csv.DictReader((HERE / 'results/participant_metrics.csv').open()))
 lookup = {(r['scenario'], r['participant'], r['stage']): r for r in rows}
-names = ('IND', 'COM', 'RES', 'PV_C', 'PV_A', 'W_C', 'W_A')
+names = ('IND', 'COM', 'RESI', 'PV_C', 'PV_A', 'W_C', 'W_A')
 scenarios = ('Baseline', 'Low RES', 'High RES', 'High demand', 'No revision',
              'Double revision', 'Reverse revision')
 out = HERE / 'plots'
