@@ -1,0 +1,62 @@
+{
+  "id": "cyprus_isolated_v1",
+  "version": "1.0",
+  "zone": "CY",
+  "trading_period_minutes": 30,
+  "rtbm_period_minutes": 5,
+  "markets": {
+    "forward": true,
+    "day_ahead": true,
+    "intraday_auctions": false,
+    "balancing": true
+  },
+  "interconnections": {
+    "enabled": false
+  },
+  "scheduled_isp": {
+    "solve_at": "11:00",
+    "effective_from": "12:00"
+  },
+  "storage": {
+    "dam": {
+      "enabled": true,
+      "circular_blocks": true
+    },
+    "participation_balancing_energy": false,
+    "participation_balancing_capacity": false
+  },
+  "res": {
+    "participation_balancing_energy": true,
+    "participation_balancing_capacity": false
+  },
+  "slack": {
+    "enabled": true,
+    "energy_shortage_eur_mwh": 10000.0,
+    "energy_surplus_eur_mwh": 10000.0,
+    "reserve_shortage_eur_mw_mtu": {
+      "FCR_up": 10000.0,
+      "FCR_down": 10000.0,
+      "aFRR_up": 10000.0,
+      "aFRR_down": 10000.0,
+      "mFRR_up": 10000.0,
+      "mFRR_down": 10000.0,
+      "RR_up": 10000.0
+    }
+  },
+  "reserve_pricing": "fixed_discrete_lp_shadow_prices",
+  "dispatch_equals_delivery": true,
+  "schedule_deviation_cost_eur_mwh": 1.0,
+  "dam_price_floor": 0.0,
+  "dam_price_cap": 1000.0,
+  "reserve_sustain_hours": 0.25,
+  "settlement": {
+    "method": "cyprus_daily_v1",
+    "production_tolerance": 0.02,
+    "small_supplier_tolerance": 0.03,
+    "pay_instructed_startups": true,
+    "res_tolerance": {
+      "commercial": 0.0,
+      "grant_supported": 0.0
+    }
+  }
+}
