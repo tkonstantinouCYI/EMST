@@ -4,23 +4,33 @@
 
 EMST v0.3 simulates the isolated Cyprus electricity market. It supports day-ahead clearing, integrated scheduling and reserve procurement, five-minute balancing, and daily and monthly settlement with UA-1 and UA-2. Multi-day simulations carry asset states forward and can resume from a checkpoint.
 
-With Python 3.11 or later, run these commands from the repository root:
+## Download and run the daily example
 
-```sh
-python -m pip install .
-python v0.3/examples/library_day.py --output results
-```
-
-Use `python -m pip install ".[audit]"` to include HiGHS.
-
-Download the wheel and `library_day.py` from the [v0.3.0 release](https://github.com/tkonstantinouCYI/EMST/releases/tag/v0.3.0). With Python 3.11 or later, run these commands from the download folder:
+1. Open [EMST v0.3.0](https://github.com/tkonstantinouCYI/EMST/releases/tag/v0.3.0).
+2. Under **Assets**, download `emst_cyprus-0.3.0-py3-none-any.whl` and `library_day.py` into the same folder.
+3. Open a terminal in that folder and run these commands with Python 3.11 or later.
 
 ```sh
 python -m pip install "./emst_cyprus-0.3.0-py3-none-any.whl[audit]"
 python library_day.py --output results
 ```
 
-The example runs a synthetic trading day and writes the results to the `results` folder. To define your own simulation, use `from emst_v03 import Market`. See the [public API guide](https://github.com/tkonstantinouCYI/EMST/blob/v0.3.0/v0.3/docs/12-public-library-api.md) and [multi-day guide](https://github.com/tkonstantinouCYI/EMST/blob/v0.3.0/v0.3/docs/13-multi-day-execution.md).
+The example simulates one synthetic Cyprus trading day and saves its outputs in `results`.
+
+## Run a full month from the repository
+
+```sh
+git clone https://github.com/tkonstantinouCYI/EMST.git
+cd EMST
+python -m pip install ".[audit]"
+python v0.3/examples/library_month.py --output month-results
+```
+
+The `audit` extra installs HiGHS. The monthly example simulates all 30 days of November 2026, saves daily checkpoints, and writes the monthly ledger to `month-results/monthly.json`. The ledger includes UA-1 (imbalance energy uplift, `S16`) and UA-2 (ancillary services uplift, `S17`). The example closes the month without supplying meter corrections. Use a new output folder for each fresh run.
+
+To run the daily example from this same checkout, use `python v0.3/examples/library_day.py --output results`. To define your own scenario, use `from emst_v03 import Market`.
+
+[Public API guide](v0.3/docs/12-public-library-api.md) · [Multi-day and monthly settlement guide](v0.3/docs/13-multi-day-execution.md)
 
 ## Source and earlier versions
 
