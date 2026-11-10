@@ -4,6 +4,15 @@
 
 EMST v0.3 simulates the isolated Cyprus electricity market. It supports day-ahead clearing, integrated scheduling and reserve procurement, five-minute balancing, and daily and monthly settlement with UA-1 and UA-2. Multi-day simulations carry asset states forward and can resume from a checkpoint.
 
+With Python 3.11 or later, run these commands from the repository root:
+
+```sh
+python -m pip install .
+python v0.3/examples/library_day.py --output results
+```
+
+Use `python -m pip install ".[audit]"` to include HiGHS.
+
 Download the wheel and `library_day.py` from the [v0.3.0 release](https://github.com/tkonstantinouCYI/EMST/releases/tag/v0.3.0). With Python 3.11 or later, run these commands from the download folder:
 
 ```sh
@@ -16,5 +25,6 @@ The example runs a synthetic trading day and writes the results to the `results`
 ## Source and earlier versions
 
 - [EMST v0.3.0 source](https://github.com/tkonstantinouCYI/EMST/tree/v0.3.0/v0.3)
+- [v0.1 source and original install configuration](https://github.com/tkonstantinouCYI/EMST/tree/de268e4)
 - [Earlier library documentation](https://github.com/tkonstantinouCYI/EMST/blob/f30e419/README.md)
 - [MEDPOWER 2026 participant-price case study](experiments/medpower2026/README.md)
