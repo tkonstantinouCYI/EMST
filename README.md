@@ -32,6 +32,22 @@ The audit extra installs the HiGHS solver. The example writes a synthetic
 trading day's outputs to the results folder. The base library can also be
 installed with `python -m pip install .`.
 
+The daily example saves the original raw stage JSON files alongside:
+
+- `results/readable_results.json`: all stages and private participant results.
+- `results/shared_results.json`: shared summaries without private participant data.
+- `results/private/participant_<hash>.json`: a separate report for each participant.
+
+In the readable report, find each participant's cashflows at
+`simulation_summary.days[].market_stages.settlement.participants.<participant_id>.financial_position`.
+Its `intervals` contain cash per half-hour MTU for forward contracts, DAM, ISP,
+RTBM, other settlement, UA1 and UA2, plus the total. Positive amounts are
+receipts; negative amounts are payments. `totals` sums the MTUs, and
+`daily_total_cash_eur` also includes any separately listed non-MTU postings.
+UA1 and UA2 are separate columns and are counted once in the total.
+Only share the summaries or the intended participant's private report; the
+operator report contains everyone's private data.
+
 ## Run a full month
 
 Using the environment's Python, run:
@@ -48,12 +64,39 @@ and writes monthly settlement to `month-results/monthly.json`. It calculates
 UA-1 and UA-2 and closes the month without meter corrections. Use a new output
 folder for each fresh run.
 
+Each date folder also contains `readable_results.json`, `shared_results.json`,
+and `private/participant_<hash>.json`. For example, open
+`month-results/2026-11-01/readable_results.json` to inspect the first day's
+market stages and participant financial positions per MTU, including UA1 and
+UA2. These are daily reports; `month-results/monthly.json` remains the separate
+monthly closure ledger, including any month-only postings. Raw daily
+`result.json` files and checkpoints remain unchanged.
+
 ## Use the library
 
 ```python
 from emst import Market, ThermalState, StorageState
 
 market = Market()
+```
+
+After a daily `market.run(...)` returns `results`, save both formats with:
+
+```python
+results.save("results")                  # Raw stage JSON files
+results.save_readable("results")         # Operator, shared and private JSON files
+
+shared = results.to_readable()
+private = results.to_readable(audience="participant", participant="supplier_T")
+```
+
+For a `market.run_period(...)` result, export each day with:
+
+```python
+from pathlib import Path
+
+for day, daily in period_results.days.items():
+    daily.save_readable(Path("month-results") / day)
 ```
 
 The library supports supplied forward contracts, day-ahead auctions and storage

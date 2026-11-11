@@ -47,9 +47,14 @@ def main():
             or {"S18", "S19", "S31"} & components or monthly["reconciliation"] is not None):
         raise RuntimeError("Unexpected monthly settlement coverage")
 
+    # Keep checkpoint result.json files intact; readable reports are separate.
+    for day, daily in results.days.items():
+        daily.save_readable(args.output / day)
+
     output = args.output / "monthly.json"
     output.write_text(json.dumps(monthly, indent=2), encoding="utf-8")
     print(f"Settled {monthly['monthly']['days']} days. Ledger written to {output}")
+    print(f"Daily readable reports with MTU financial positions: {args.output}/YYYY-MM-DD/readable_results.json")
     for name, code in (("UA-1", "S16"), ("UA-2", "S17")):
         cash = sum(
             Decimal(entry["cash_eur"]) for entry in monthly["ledger"]

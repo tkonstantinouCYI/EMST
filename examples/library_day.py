@@ -60,6 +60,9 @@ def main():
          'res':[float(market.assets['solar_portfolio'].forecast.iloc[t,0] if args.dataframes else market.assets['solar_portfolio'].forecast[t])*.99 for t in range(48)]}
     results=market.run(time_index=index,system_forecasts=tso,reserve_requirements=requirements,historical_rtbm_prices=history)
     results.save(args.output)
+    readable = results.save_readable(args.output)
+    print(f"Readable results: {readable['operator']}")
+    print(f"Shared summaries: {readable['shared']}")
     print(json.dumps(dict(passed=results.audit['passed'],checks=results.audit['checks'],
         physical_imbalance_mwh=results.manifest['physical_imbalance_mwh'],ending_states=results.ending_states),indent=2))
     if not results.audit['passed']:raise SystemExit(1)
