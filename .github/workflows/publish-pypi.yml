@@ -1,4 +1,4 @@
-name: Publish EMST v0.3.0 to PyPI
+name: Publish EMST to PyPI
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: emst-pypi-0.3.0
+  group: emst-pypi
   cancel-in-progress: false
 
 jobs:
@@ -22,8 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Source used for the reviewed PyPI candidates.
-          ref: c819b977929a6432dd22650802eb0e64cf1698c7
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
@@ -35,7 +33,7 @@ jobs:
           from pathlib import Path
           project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
           assert project["name"] == "emst-cyprus"
-          assert project["version"] == "0.3.0"
+          print("Release version:", project["version"])
           PY
       - name: Build and check distributions
         run: |
@@ -44,17 +42,25 @@ jobs:
           python -m twine check --strict dist/*
       - name: Test installed wheel
         run: |
-          python -m pip install "dist/emst_cyprus-0.3.0-py3-none-any.whl[audit]"
+          python - <<'PY'
+          import subprocess
+          import sys
+          from pathlib import Path
+          wheel, = Path("dist").glob("*.whl")
+          subprocess.run([sys.executable, "-m", "pip", "install", str(wheel) + "[audit,dataframes]"], check=True)
+          PY
           python -m pip check
-          python v0.3/examples/library_day.py --output /tmp/emst-pypi-daily
+          cd /tmp
+          python "$GITHUB_WORKSPACE/examples/library_day.py" --output /tmp/emst-pypi-daily
+          python -m unittest discover -s "$GITHUB_WORKSPACE/tests"
       - uses: actions/upload-artifact@v7
         with:
-          name: emst-pypi-0.3.0
+          name: emst-pypi
           path: dist/*
           if-no-files-found: error
 
   publish:
-    if: inputs.publish
+    if: inputs.publish && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -65,7 +71,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: emst-pypi-0.3.0
+          name: emst-pypi
           path: dist
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
