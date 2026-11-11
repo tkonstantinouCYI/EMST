@@ -528,3 +528,11 @@ computed from the closed monthly ledger. `daily_cashflows` and
 closed month. `monthly_postings` lists month-only postings. Monthly totals include
 UA1/UA2 and any monthly adjustments once; operator-account transfers do not count
 as participant cash. Shared reports omit all private participant records.
+
+
+Public daily and monthly settlement calculates only UA1 and UA2 uplift accounts.
+UA3–UA7 are excluded; transmission/distribution use charges remain. Monthly
+closure needs no `penalty_shares` argument: any penalty proceeds are credited
+through UA1. Legacy UA6/UA7 arguments are accepted only when zero and create no
+postings. Nonzero allocations to those accounts are rejected. Daily reports
+created by older code with UA5–UA7 charges must be rerun before monthly closure.

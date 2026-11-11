@@ -35,6 +35,8 @@ def _month_ledger(days, month, parameters, corrections, penalty_rates, assessmen
         postings = {entry['id']: entry for entry in result.ledger}
         grouped = {p.id: [] for p in periods}
         for entry in result.ledger:
+            if entry['component'] in ('S20','S21','S22'):
+                raise ValueError('Daily results contain excluded UA5/UA6/UA7 charges; rerun with the current public API')
             if entry['component'] in ('S18', 'S19') and entry['rule'] == 'daily_accrual':
                 removed_accruals.append({**entry, 'id': prefix + entry['id']})
             elif entry['period'] in grouped:
@@ -112,7 +114,7 @@ def _month_ledger(days, month, parameters, corrections, penalty_rates, assessmen
             if changed:
                 # Use the same IDs as daily settlement after adding the day namespace.
                 recovery = Ledger()
-                post_tariffs(recovery, tariff_rows, tariffs)
+                post_tariffs(recovery, tariff_rows, tariffs, include_levies=False)
                 period_recovery(recovery, period.id, native, deviations, parties,
                                 'qualified_consumption_fallback', ledger.entries[first:])
                 for entry in recovery.export():
@@ -127,11 +129,11 @@ def _month_ledger(days, month, parameters, corrections, penalty_rates, assessmen
         ledger.post(f'monthly_systematic:{asset}', 'S23',
             f"participant:{assessment['participant']}:nonDAM", 'A-E',
             -D(assessment['amount_eur']), 1, month, assessment['formula_id'], 'complete_month_meter_history')
-    finalise_accounts(ledger, month, consumption, None, None, parameters['penalty_shares'])
+    finalise_accounts(ledger, month, consumption, None, None, parameters['penalty_shares'], uplift_scope='UA1_UA2_only')
     return ledger, annex_rows, removed_accruals, assessments
 
 
-def settle_month(results, month, *, penalty_shares, reserve_cost_eur=0, reconciliation_cost_eur=0,
+def settle_month(results, month, *, penalty_shares=None, reserve_cost_eur=0, reconciliation_cost_eur=0,
                   meter_corrections=None, systematic_penalty_rates=None, holidays=()):
     """Close a calendar month and optionally produce separate Annex adjustments.
 
@@ -157,14 +159,21 @@ def settle_month(results, month, *, penalty_shares, reserve_cost_eur=0, reconcil
         corrections[day, mtu, asset] = float(meter)
     if D(reserve_cost_eur) or D(reconciliation_cost_eur):
         raise ValueError('Public settlement excludes UA-3 and UA-4')
-    parameters = dict(penalty_shares=penalty_shares)
+    # Accept the old zero-valued destination keys for call compatibility only;
+    # they never create UA6/UA7 ledger postings in public settlement.
+    shares = {'UA-1': 1} if penalty_shares is None else dict(penalty_shares)
+    for key in ('UA-6', 'UA-7'):
+        if key in shares and D(shares[key]) == 0: del shares[key]
+    if set(shares) != {'UA-1'} or D(shares['UA-1']) != 1:
+        raise ValueError('Public settlement supports only 100% penalty redistribution to UA1')
+    parameters = dict(penalty_shares=shares)
     rates = systematic_penalty_rates or {}
     original, inputs, accruals, assessments = _month_ledger(days, month, parameters, {}, rates)
     holidays = frozenset(date.fromisoformat(h) if isinstance(h, str) else h for h in holidays)
     output = dict(monthly=statement(original, 'monthly', month, expected, list(days)),
                   calendar=monthly_calendar(start.year, start.month, holidays), ledger=original.export(),
                   replaced_daily_accruals=accruals, systematic_penalties=assessments,
-                  excluded_uplifts=['UA-3', 'UA-4'], reconciliation=None)
+                  excluded_uplifts=['UA-3', 'UA-4', 'UA-5', 'UA-6', 'UA-7'], reconciliation=None)
     if meter_corrections is not None:
         recomputed, revised, _, _ = _month_ledger(days, month, parameters, corrections, rates, assessments)
         ledger, adjustments, delta, replay = reconcile_meter_ledgers(inputs, revised, original, recomputed)

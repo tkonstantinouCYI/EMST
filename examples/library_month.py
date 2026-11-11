@@ -38,13 +38,13 @@ def main():
         start="2026-11-01", end="2026-11-30", scenario=scenario,
         checkpoint_directory=args.output,
     )
-    # These penalty redistribution shares are synthetic scenario inputs.
+    # Penalty proceeds, if present, are credited through UA1.
     monthly = results.settle_month(
-        "2026-11", penalty_shares={"UA-1": 1, "UA-6": 0, "UA-7": 0},
+        "2026-11",
     )
     components = {entry["component"] for entry in monthly["ledger"]}
     if (monthly["monthly"]["days"] != 30 or not {"S16", "S17"} <= components
-            or {"S18", "S19", "S31"} & components or monthly["reconciliation"] is not None):
+            or {"S18", "S19", "S20", "S21", "S22", "S31"} & components or monthly["reconciliation"] is not None):
         raise RuntimeError("Unexpected monthly settlement coverage")
 
     # Keep checkpoint result.json files intact; readable reports are separate.

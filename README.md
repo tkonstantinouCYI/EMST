@@ -45,6 +45,9 @@ RTBM, other settlement, UA1 and UA2, plus the total. Positive amounts are
 receipts; negative amounts are payments. `totals` sums the MTUs, and
 `daily_total_cash_eur` also includes any separately listed non-MTU postings.
 UA1 and UA2 are separate columns and are counted once in the total.
+The public API excludes UA3–UA7. Network-use charges remain under other
+settlement. Monthly penalty proceeds, if present, are credited through UA1;
+no penalty-share configuration is required.
 Only share the summaries or the intended participant's private report; the
 operator report contains everyone's private data.
 
@@ -136,8 +139,8 @@ for day, daily in period_results.days.items():
     daily.save_readable(Path("month-results") / day)
 
 monthly = period_results.settle_month(
-    "2026-11", penalty_shares={"UA-1": 1, "UA-6": 0, "UA-7": 0}
-)  # Synthetic redistribution shares for this example
+    "2026-11"
+)
 period_results.save_readable("month-results", monthly=monthly)
 ```
 

@@ -129,7 +129,9 @@ The selected date is an ordinary 48-MTU day with complete selected series.
 10. **Settlement:** the library's default synthetic tariff/parameter bundle,
     tolerance configuration and UA2 zero-deviation fallback remain in effect.
     These amounts are not represented as the historical approved tariffs.
-    Daily settlement includes UA1/UA2; UA3/UA4 and meter reconciliation are excluded.
+    Daily settlement includes UA1/UA2; UA3–UA7 and meter reconciliation are excluded.
+    Transmission/distribution use charges remain; RES, PSO and administration
+    uplift levies are not charged by the public API.
 
 ## Verification and interpretation
 

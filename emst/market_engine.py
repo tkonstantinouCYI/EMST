@@ -304,7 +304,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                 if not award:continue
                 component='S05' if product.startswith('FCR') else 'S06' if product.startswith('aFRR') else 'S07' if product.startswith('mFRR') else 'S08'
                 ledger.post(f'reserve:{a.id}:{t}:{product}',component,f'participant:{a.participant}:nonDAM','A-C',award,selected['reserve_prices'][product],period.id,'13.5','ISP_award')
-        post_tariffs(ledger,tariff_rows,parameters['tariffs'])
+        post_tariffs(ledger,tariff_rows,parameters['tariffs'],include_levies=False)
         period_recovery(ledger,period.id,native,deviations,owners,'qualified_consumption_fallback')
     checks={
         'ISP_energy_balances':all(abs(sum(row['assets'][a.id]['power_mw'] for a in controllable)+row['res_dispatch_reference_mw']-row['res_curtailment_mw']+(row['slack']['energy_shortage_mwh']-row['slack']['energy_surplus_mwh'])/row['hours']-run['demand_mw'][j])<1e-5 for run in runs for j,row in enumerate(run['rows'])),
@@ -374,7 +374,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                             'private_cash_eur':str(ledger.balances().get('participant:'+p+':private',D(0)))} for p in participants}
     manifest=dict(library_version='0.3.1',ruleset=rules,parameter_id=parameters['id'],day=str(day),
         runtime=dict(python=platform.python_version(),pulp=lp.__version__,solver='HiGHS' if lp.HiGHS().available() else 'CBC'),
-        scope='daily_accrual',excluded_uplifts=['UA-3','UA-4'],current_rules_conformance_verified=False,synthetic_parameters=parameters.get('synthetic',False),
+        scope='daily_accrual',excluded_uplifts=['UA-3','UA-4','UA-5','UA-6','UA-7'],current_rules_conformance_verified=False,synthetic_parameters=parameters.get('synthetic',False),
         physical_model='ISP_MTU_average_dispatch_and_30_second_RTBM_trajectories',
         actual_delivery='equal_to_RTBM_dispatch',forecast_revisions=False,
         rtbm_forecast_method='TSO_baseline_plus_latest_completed_RTU_error',

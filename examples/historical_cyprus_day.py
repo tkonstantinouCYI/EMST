@@ -93,6 +93,7 @@ def verify(result, data, market):
                 if Decimal(row['total_cash_eur']) != mtu_cash:
                     raise AssertionError('MTU financial position does not reconcile')
     checks['all_participant_financial_positions_reconcile'] = True
+    checks['only_UA1_UA2_uplift_postings'] = not any(e['component'] in ('S18','S19','S20','S21','S22') for e in result.ledger)
     for code in ('S16', 'S17'):
         pool = sum((Decimal(e['cash_eur']) for e in result.ledger if e['component']==code and not e['account'].startswith('participant:')), Decimal(0))
         paid = sum((Decimal(e['cash_eur']) for e in result.ledger if e['component']==code and e['account'].startswith('participant:')), Decimal(0))

@@ -6,14 +6,14 @@ from .settlement import D,Ledger,recover,statement
 from .calendar import next_business_day
 
 
-def tariff_lines(meter,tariffs):
+def tariff_lines(meter,tariffs,*,include_levies=True):
     """Native consumption meters; power quote EUR/MW/period converted once."""
     q=D(meter["energy_mwh"]);dt=D(meter["hours"])
     voltage=meter["voltage"]
     if q<0 or dt<=0 or voltage not in ("HV","MV","LV"):
         raise ValueError("Invalid tariff meter")
     if meter["purpose"]=="eligible_storage_charging":
-        return {s:D(0) for s in ("S14","S15","S20","S21","S22")}
+        return {s:D(0) for s in (("S14","S15","S20","S21","S22") if include_levies else ("S14","S15"))}
     if meter["purpose"] not in ("consumption","auxiliary","supplier_business"):
         raise ValueError("Missing meter-purpose eligibility")
     row=tariffs[voltage]
@@ -23,6 +23,7 @@ def tariff_lines(meter,tariffs):
         duos=q*D(tariffs["MV"]["duos_energy"])+q/dt*D(tariffs["MV"]["duos_power"])
     if voltage=="LV":
         duos+=q*D(tariffs["LV"]["duos_energy"])+q/dt*D(tariffs["LV"]["duos_power"])
+    if not include_levies:return {"S14":tuos,"S15":duos}
     return {"S14":tuos,"S15":duos,"S20":q*D(row["RES"]),
             "S21":q*D(row["PSO"]),"S22":q*D(row["admin"])}
 
@@ -60,11 +61,11 @@ def ancillary_recovery(cost1,cost2,consumption,entity_deviations,entity_particip
     return combined,convention
 
 
-def post_tariffs(ledger,meters,tariffs):
+def post_tariffs(ledger,meters,tariffs,*,include_levies=True):
     accounts={"S14":"A-F","S15":"A-G","S20":"UA-5","S21":"UA-6","S22":"UA-7"}
     result=[]
     for meter in meters:
-        charges=tariff_lines(meter,tariffs)
+        charges=tariff_lines(meter,tariffs,include_levies=include_levies)
         for component,amount in charges.items():
             ledger.post(f"tariff:{meter['id']}:{component}",component,
                 f"participant:{meter['participant']}:nonDAM",accounts[component],1,1,
@@ -94,9 +95,10 @@ def period_recovery(ledger,period,consumption,bridges,entity_participants,zero_p
             "ANSCC2":str(cost2),"convention":convention}
 
 
-def close_month_accounts(ledger,period,consumption,reserve_cost,reconciliation_cost,penalty_shares,external):
+def close_month_accounts(ledger,period,consumption,reserve_cost,reconciliation_cost,penalty_shares,external,*,uplift_scope=None):
     """13.8.4/5 and R08 distribution; supplied external costs are explicit inputs."""
-    if sum(map(D,penalty_shares.values()),D(0))!=1 or set(penalty_shares)!={"UA-1","UA-6","UA-7"}:
+    targets={'UA-1'} if uplift_scope=='UA1_UA2_only' else {'UA-1','UA-6','UA-7'}
+    if sum(map(D,penalty_shares.values()),D(0))!=1 or set(penalty_shares)!=targets:
         raise ValueError("Dated R08 noncompliance redistribution shares must sum to one")
     penalty=ledger.balances().get("A-E",D(0))
     for target,share in penalty_shares.items():
@@ -224,7 +226,7 @@ def reconciliation_calendar(year,month,holidays):
         final=business_offset(preliminary,10,holidays).isoformat(),rule="Annex13.1.7/8")
 
 
-def finalise_accounts(ledger,month,consumption,reserve_cost,reconciliation_cost,penalty_shares):
+def finalise_accounts(ledger,month,consumption,reserve_cost,reconciliation_cost,penalty_shares,*,uplift_scope=None):
     """Post assessed external costs and close the common monthly accounts."""
     for account,cost,beneficiary,component in (("A-D",reserve_cost,"clearing_service_provider","S18"),
                                               ("A-H",reconciliation_cost,"prior_reconciliation_counterparties","S19")):
@@ -232,8 +234,10 @@ def finalise_accounts(ledger,month,consumption,reserve_cost,reconciliation_cost,
             continue
         ledger.post(f"external_cost:{month}:{account}",component,beneficiary,account,1,1,month,
                     "13.8.4-5","supplied_assessed_external_cost",cash=cost)
+    external={"A-F":"transmission_owner","A-G":"distribution_owner"}
+    if uplift_scope!='UA1_UA2_only':external.update({"UA-5":"RES_fund","UA-6":"PSO","UA-7":"TSOC"})
     close_month_accounts(ledger,month,consumption,reserve_cost,reconciliation_cost,penalty_shares,
-        {"A-F":"transmission_owner","A-G":"distribution_owner","UA-5":"RES_fund","UA-6":"PSO","UA-7":"TSOC"})
+        external,uplift_scope=uplift_scope)
 
 
 def reconcile_meter_ledgers(inputs,revised,original,recomputed):

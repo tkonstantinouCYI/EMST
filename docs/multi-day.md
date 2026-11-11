@@ -91,12 +91,10 @@ is introduced. Horizon-end behaviour remains that of the existing daily model.
 
 After simulating the entire calendar month, call:
 
-    closed = results.settle_month(
-        '2026-11',
-        penalty_shares={'UA-1': 1, 'UA-6': 0, 'UA-7': 0},
-    )
+    closed = results.settle_month('2026-11')
 
-Supply dated penalty allocation shares in place of the synthetic values shown.
+Penalty proceeds, if present, are redistributed entirely through UA1.
+No penalty-share argument is needed.
 Optional systematic_penalty_rates maps eligible supplier or RES asset IDs to
 absolute_rate, rms_rate, absolute_tolerance and rms_tolerance. Optional holidays
 supplies dates for the settlement calendars.
@@ -111,7 +109,11 @@ clearing services and eligible default losses. These costs depend on external
 financial arrangements. Physical balancing reserve capacity is covered by
 UA-2. UA-4 recovers the balance of the Reconciliation Account, which depends on
 subsequent certified meter and settlement corrections outside the simulation
-scope. The specialised accounting fixture retains its external-cost inputs.
+scope. UA5 (RES levy), UA6 (PSO levy) and UA7 (administration levy) are also
+excluded. Transmission/distribution use charges remain separate settlement
+components. The specialised accounting fixture retains its broader external-cost
+inputs; this restriction applies to the public Market API. Old daily results
+containing UA5–UA7 postings must be rerun before monthly closure.
 
 Meter reconciliation is optional. If used, meter_corrections replaces
 loss-adjusted MWh per asset and zero-based half-hour. Supplier values are
