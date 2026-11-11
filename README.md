@@ -48,6 +48,34 @@ UA1 and UA2 are separate columns and are counted once in the total.
 Only share the summaries or the intended participant's private report; the
 operator report contains everyone's private data.
 
+## Run a historical Cyprus day
+
+```sh
+python examples/historical_cyprus_day.py --output historical-results
+```
+
+This separate example uses public TSOC demand, solar/wind generation, forecasts
+and directional FCR/aFRR/mFRR requirements for 14 October 2026, with documented
+assumptions for the representative committed fleet, bids and forward contract.
+It saves raw and readable JSONs, participant financial positions with UA1/UA2,
+and a stage verification report. Five-minute observations are reconstructed
+from half-hour data; this is a historical-data study, not an official market replay.
+See [sources, assumptions and data refresh instructions](docs/historical-cyprus-day.md).
+
+The dataset is bundled in `examples/data/cyprus_2026_10_14.json`, so the run
+requires no internet connection or Excel reader. Use the environment's Python
+as shown in the installation instructions above. Open these files after the run:
+
+- `historical-results/raw_results.json`: complete raw simulation results.
+- `historical-results/raw/`: raw results split into stage/input files.
+- `historical-results/readable_results.json`: readable market stages and private
+  participant results, including financial positions per MTU with UA1/UA2.
+- `historical-results/shared_results.json`: shared summaries only.
+- `historical-results/private/participant_<hash>.json`: individual participant reports.
+- `historical-results/verification.json`: stage checks and reconciliation results.
+- `historical-results/scenario_inputs.json` and `assumptions.json`: public input
+  series, source provenance and modelling assumptions.
+
 ## Run a full month
 
 Using the environment's Python, run:
