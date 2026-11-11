@@ -1,5 +1,9 @@
-"""EMST: Electricity Market Simulation Tool."""
+"""EMST electricity market simulation library."""
+__version__ = "0.3.1"
+from .market import Market,MarketResults,Participant,ThermalState,StorageState
+from .rulesets import Ruleset
+from .strategies import Strategy
+from .model import Forward
+from .multiday import PeriodResults
 
-from emst.core.simulation import SequentialMarketSimulation
-
-__all__ = ["SequentialMarketSimulation"]
+__all__=["Market","MarketResults","PeriodResults","Participant","ThermalState","StorageState","Ruleset","Strategy","Forward"]
