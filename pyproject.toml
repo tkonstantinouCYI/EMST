@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emst-cyprus"
-version = "0.3.0"
+version = "0.3.1"
 description = "Isolated Cyprus electricity market simulation and auditable settlement"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,12 +15,15 @@ audit = ["highspy>=1.12,<2"]
 dataframes = ["pandas>=2.2,<4"]
 
 [project.scripts]
-emst-cyprus = "emst_v03.runner:main"
+emst-cyprus = "emst.runner:main"
 
 [tool.setuptools.packages.find]
-where = ["v0.3"]
-include = ["emst_v03*"]
+where = ["."]
+include = ["emst*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.package-data]
+emst = ["data/*.json"]

@@ -1,1 +1,0 @@
-"""Predefined system configurations."""

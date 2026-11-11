@@ -15,3 +15,6 @@ htmlcov/
 Legacy MST/
 examples/output/
 paper/
+
+tmp/
+output/
