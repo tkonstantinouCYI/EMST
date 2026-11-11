@@ -49,12 +49,16 @@ def _cash_lines(entries, participant):
     return lines
 
 
+CASH_FIELDS = ('forward_market_cash_eur', 'day_ahead_market_cash_eur', 'isp_cash_eur',
+               'rtbm_cash_eur', 'settlement_cash_eur', 'ua1_cash_eur', 'ua2_cash_eur')
+CASH_ALLOCATION = {'S01': CASH_FIELDS[0], 'S02': CASH_FIELDS[1],
+                   'S16': CASH_FIELDS[5], 'S17': CASH_FIELDS[6]}
+CASH_ALLOCATION.update({code: CASH_FIELDS[2] for code in ('S05', 'S06', 'S07', 'S08', 'S13')})
+CASH_ALLOCATION.update({code: CASH_FIELDS[3] for code in ('S03', 'S10', 'S12')})
+
+
 def _financial_position(result, participant):
-    fields = ('forward_market_cash_eur', 'day_ahead_market_cash_eur', 'isp_cash_eur',
-              'rtbm_cash_eur', 'settlement_cash_eur', 'ua1_cash_eur', 'ua2_cash_eur')
-    allocation = {'S01': fields[0], 'S02': fields[1], 'S16': fields[5], 'S17': fields[6]}
-    allocation.update({code: fields[2] for code in ('S05', 'S06', 'S07', 'S08', 'S13')})
-    allocation.update({code: fields[3] for code in ('S03', 'S10', 'S12')})
+    fields, allocation = CASH_FIELDS, CASH_ALLOCATION
     times = result.inputs['time_index']
     periods = {f"{result.manifest['day']}:30:{t:03}": t for t in range(len(times))}
     buckets = [{field: Decimal(0) for field in fields} for _ in times]
@@ -307,17 +311,70 @@ def readable_results(result, *, audience='shared', participant=None):
 
 def save_readable_results(result, directory):
     """Write an operator report, shared summaries and one report per participant."""
+    return _save_reports(directory, lambda **kw: readable_results(result, **kw),
+                         [p['id'] for p in result.inputs['participants']])
+
+
+def _save_reports(directory, report, participants):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     paths = dict(operator=directory/'readable_results.json', shared=directory/'shared_results.json', participants={})
     def write(path, data):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, allow_nan=False), encoding='utf-8')
-    write(paths['operator'], readable_results(result, audience='operator'))
-    write(paths['shared'], readable_results(result))
-    for owner in (p['id'] for p in result.inputs['participants']):
+    write(paths['operator'], report(audience='operator'))
+    write(paths['shared'], report())
+    for owner in participants:
         filename = 'participant_' + hashlib.sha256(owner.encode()).hexdigest()[:16] + '.json'
         path = directory/'private'/filename
-        write(path, readable_results(result, audience='participant', participant=owner))
+        write(path, report(audience='participant', participant=owner))
         paths['participants'][owner] = path
     return paths
+
+
+def readable_month(results, monthly, *, audience='shared', participant=None):
+    """Combine original daily reports with totals from the closed monthly ledger."""
+    from calendar import monthrange
+    from datetime import date
+    month = monthly['monthly']['period']
+    first = date.fromisoformat(month + '-01')
+    dates = [first.replace(day=i).isoformat() for i in range(1, monthrange(first.year, first.month)[1]+1)]
+    if any(day not in results.days for day in dates):
+        raise ValueError('Readable monthly reporting requires every day of the month')
+    if monthly.get('reconciliation') is not None:
+        raise ValueError('Readable monthly reporting requires closure without meter reconciliation')
+    reports = [readable_results(results.days[day], audience=audience, participant=participant) for day in dates]
+    report = reports[0]
+    summary = report['simulation_summary']
+    summary['period_end'] = dates[-1]
+    summary['days'] = [r['simulation_summary']['days'][0] for r in reports]
+    closure = dict(month=month, days=len(dates), excluded_uplifts=monthly['excluded_uplifts'],
+                   reconciliation=False)
+    if audience != 'shared':
+        ids = sorted({p for day in summary['days'] for p in day['market_stages']['settlement']['participants']})
+        closure['participants'] = {}
+        with localcontext() as context:
+            context.prec = 80
+            for owner in ids:
+                totals = {field: Decimal(0) for field in CASH_FIELDS}
+                for entry in monthly['ledger']:
+                    totals[CASH_ALLOCATION.get(entry['component'], 'settlement_cash_eur')] += _cash(entry, owner)
+                daily = []
+                for day in summary['days']:
+                    position = day['market_stages']['settlement']['participants'].get(owner, {}).get('financial_position')
+                    daily.append(dict(date=day['date'], cash_eur=position['daily_total_cash_eur'] if position else '0'))
+                accrued = sum((Decimal(row['cash_eur']) for row in daily), Decimal(0))
+                total = sum(totals.values(), Decimal(0))
+                closure['participants'][owner] = dict(financial_position=dict(
+                    totals={**{k: str(v) for k, v in totals.items()}, 'total_cash_eur': str(total)},
+                    daily_cashflows=daily, daily_accrual_total_cash_eur=str(accrued),
+                    monthly_adjustment_cash_eur=str(total-accrued)),
+                    monthly_postings=_cash_lines([e for e in monthly['ledger'] if e['period'] == month], owner))
+    summary['monthly_settlement'] = closure
+    return report
+
+
+def save_readable_month(results, monthly, directory):
+    ids = sorted({p['id'] for day, result in results.days.items()
+                  if day.startswith(monthly['monthly']['period'] + '-') for p in result.inputs['participants']})
+    return _save_reports(directory, lambda **kw: readable_month(results, monthly, **kw), ids)

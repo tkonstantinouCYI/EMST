@@ -64,6 +64,14 @@ class PeriodResults:
     checkpoint: Path
     completed_days: list
 
+    def to_readable(self, *, monthly, audience='shared', participant=None):
+        from .reporting import readable_month
+        return readable_month(self, monthly, audience=audience, participant=participant)
+
+    def save_readable(self, directory, *, monthly):
+        from .reporting import save_readable_month
+        return save_readable_month(self, monthly, directory)
+
     def settle_month(self, month, **parameters):
         """Close a complete simulated month and optionally reconcile meter revisions."""
         from .monthly import settle_month

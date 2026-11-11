@@ -508,3 +508,23 @@ resume_from=None)` runs consecutive daily horizons with automatic physical-state
 observation and settlement-price-history carryover. It writes verified daily
 results and atomic checkpoints. See [multi-day execution](multi-day.md)
 for input structure, resume examples and accounting/calendar limitations.
+
+
+## Combined monthly readable reports
+
+After `monthly = period_results.settle_month(...)`, call
+`period_results.save_readable("month-results", monthly=monthly)` to write a
+combined `readable_results.json`, `shared_results.json` and separate private
+participant files. `period_results.to_readable(monthly=monthly, audience=...)`
+also returns the report in memory, using the same audience options as daily
+reports. A complete calendar month without meter reconciliation is required.
+
+`simulation_summary.days` contains all original daily reports.
+`simulation_summary.monthly_settlement.participants[participant_id]` contains
+`financial_position.totals` with all seven stage/uplift columns and their total,
+computed from the closed monthly ledger. `daily_cashflows` and
+`daily_accrual_total_cash_eur` retain the original daily results;
+`monthly_adjustment_cash_eur` explains the difference between their sum and the
+closed month. `monthly_postings` lists month-only postings. Monthly totals include
+UA1/UA2 and any monthly adjustments once; operator-account transfers do not count
+as participant cash. Shared reports omit all private participant records.

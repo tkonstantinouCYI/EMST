@@ -51,6 +51,9 @@ def main():
     for day, daily in results.days.items():
         daily.save_readable(args.output / day)
 
+    combined = results.save_readable(args.output, monthly=monthly)
+    print(f"Combined monthly readable report: {combined['operator']}")
+
     output = args.output / "monthly.json"
     output.write_text(json.dumps(monthly, indent=2), encoding="utf-8")
     print(f"Settled {monthly['monthly']['days']} days. Ledger written to {output}")

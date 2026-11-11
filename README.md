@@ -64,6 +64,15 @@ and writes monthly settlement to `month-results/monthly.json`. It calculates
 UA-1 and UA-2 and closes the month without meter corrections. Use a new output
 folder for each fresh run.
 
+The full month is also saved in `month-results/readable_results.json`, containing
+all 30 days and monthly participant totals at
+`simulation_summary.monthly_settlement.participants.<participant_id>.financial_position`.
+The seven cashflow columns include UA1 and UA2. Monthly totals use the closed
+monthly ledger; `daily_accrual_total_cash_eur` and `monthly_adjustment_cash_eur`
+explain any difference from the daily reports, including month-only charges or
+credits. Combined shared and participant reports are saved alongside it in
+`shared_results.json` and `private/`.
+
 Each date folder also contains `readable_results.json`, `shared_results.json`,
 and `private/participant_<hash>.json`. For example, open
 `month-results/2026-11-01/readable_results.json` to inspect the first day's
@@ -97,6 +106,11 @@ from pathlib import Path
 
 for day, daily in period_results.days.items():
     daily.save_readable(Path("month-results") / day)
+
+monthly = period_results.settle_month(
+    "2026-11", penalty_shares={"UA-1": 1, "UA-6": 0, "UA-7": 0}
+)  # Synthetic redistribution shares for this example
+period_results.save_readable("month-results", monthly=monthly)
 ```
 
 The library supports supplied forward contracts, day-ahead auctions and storage

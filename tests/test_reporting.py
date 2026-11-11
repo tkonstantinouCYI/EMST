@@ -148,3 +148,48 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual(len(files['participants']), 2)
             self.assertEqual(json.loads(files['shared'].read_text())['audience'], 'shared')
             self.assertTrue(all(p.resolve().is_relative_to(Path(folder).resolve()) for p in files['participants'].values()))
+
+
+    def test_monthly_totals_closure_adjustment_and_privacy(self):
+        from emst.multiday import PeriodResults
+        days = {}
+        for n in range(1, 31):
+            day = f'2026-11-{n:02}'
+            raw = json.dumps(asdict(example())).replace('2026-11-05', day)
+            days[day] = MarketResults(**json.loads(raw))
+        period = PeriodResults(days, Path('unused'), list(days))
+        ledger = [e for result in days.values() for e in result.ledger]
+        for component, cash in [('S16', '-2'), ('S17', '-3'), ('S23', '-7')]:
+            ledger.append(dict(id=component, component=component, account='participant:alice:nonDAM',
+                counterparty='operator', cash_eur=cash, quantity='1', price=cash, period='2026-11'))
+        monthly = dict(monthly=dict(period='2026-11'), ledger=ledger,
+                       excluded_uplifts=['UA-3', 'UA-4'], reconciliation=None)
+        before = deepcopy(monthly)
+        report = period.to_readable(monthly=monthly, audience='operator')['simulation_summary']
+        self.assertEqual(len(report['days']), 30)
+        self.assertEqual(report['period_end'], '2026-11-30')
+        fp = report['monthly_settlement']['participants']['alice']['financial_position']
+        self.assertEqual(fp['totals']['forward_market_cash_eur'], '1500')
+        self.assertEqual(fp['totals']['day_ahead_market_cash_eur'], '1800')
+        self.assertEqual(fp['totals']['ua1_cash_eur'], '-2')
+        self.assertEqual(fp['totals']['ua2_cash_eur'], '-3')
+        self.assertEqual(fp['totals']['total_cash_eur'], '3288')
+        self.assertEqual(fp['daily_accrual_total_cash_eur'], '3300')
+        self.assertEqual(fp['monthly_adjustment_cash_eur'], '-12')
+        shared = period.to_readable(monthly=monthly)['simulation_summary']
+        self.assertNotIn('participants', shared['monthly_settlement'])
+        private = period.to_readable(monthly=monthly, audience='participant', participant='bob')['simulation_summary']
+        self.assertEqual(set(private['monthly_settlement']['participants']), {'bob'})
+        self.assertTrue(all(set(d['market_stages']['settlement']['participants']) == {'bob'} for d in private['days']))
+        self.assertEqual(monthly, before)
+        parent = Path(__file__).resolve().parents[1] / 'tmp'
+        parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as folder:
+            files = period.save_readable(folder, monthly=monthly)
+            self.assertEqual(len(files['participants']), 2)
+            self.assertEqual(len(json.loads(files['operator'].read_text())['simulation_summary']['days']), 30)
+        with self.assertRaises(ValueError):
+            period.to_readable(monthly={**monthly, 'reconciliation': {}})
+        del days['2026-11-30']
+        with self.assertRaises(ValueError):
+            period.to_readable(monthly=monthly)
