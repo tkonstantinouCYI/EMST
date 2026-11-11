@@ -20,12 +20,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Source used for the reviewed PyPI candidates.
-          ref: c819b97
+          ref: c819b977929a6432dd22650802eb0e64cf1698c7
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Validate release identity
@@ -47,7 +47,7 @@ jobs:
           python -m pip install "dist/emst_cyprus-0.3.0-py3-none-any.whl[audit]"
           python -m pip check
           python v0.3/examples/library_day.py --output /tmp/emst-pypi-daily
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: emst-pypi-0.3.0
           path: dist/*
@@ -63,7 +63,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: emst-pypi-0.3.0
           path: dist
