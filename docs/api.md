@@ -1,5 +1,44 @@
 # Public Python library interface
 
+## Readable results
+
+`results.to_readable()` returns shared stage summaries. Use
+`results.to_readable(audience="participant", participant="supplier_T")` for
+those summaries plus that participant's private records, or `audience="operator"`
+for all participant records. `results.save_readable("readable-results")` writes
+`readable_results.json` (operator-private), `shared_results.json`, and individual
+participant files under `private/`. The returned path mapping identifies each
+participant file. Raw results and saved source files are left intact.
+
+The hierarchy is simulation summary, daily summaries, market stages, then stage
+summary and participant records. Stage names are `forward_market`,
+`day_ahead_market`, `isp`, `rtbm`, and `settlement`. Shared fields are explicitly
+selected aggregates and published-price-style results. Individual bids,
+contract prices, assets and cash positions appear in the private views. A
+participant's settlement view includes meters for assets for which it is the
+registered balancing-responsible participant. Only the operator file contains
+all private records. Monetary strings preserve ledger precision, and positive
+cash denotes a receipt. Cash posting `reference_price` retains the raw ledger's
+price input; `cash_eur` is the assessed payment, including special pricing rules.
+
+ISP is organised as `isp.runs[]`, with a `run_id`, a shared `summary`, and
+private `participants` inside each run. Shared exports omit `participants`.
+Each summary MTU includes `energy_shadow_price_eur_mwh` from the fixed-commitment
+LP, `indicative_upward_offer_price_eur_mwh` (highest scheduled upward offer),
+and `indicative_downward_offer_price_eur_mwh` (lowest scheduled downward offer).
+Directional indicators are null when no offer exceeds the 1e-7 MWh scheduling
+tolerance in that direction. These indicators describe ISP scheduling rather
+than RTBM settlement prices.
+
+Each private settlement section contains `financial_position.intervals`, with
+signed cash by MTU for forward, DAM, ISP, RTBM, other settlement, UA-1 and UA-2.
+ISP includes reserve capacity and startup payments. RTBM includes instructed
+balancing and emergency energy payments. `settlement_cash_eur` excludes UA-1 and
+UA-2 so all seven columns add to `total_cash_eur`. These are stage attributions
+of ledger postings, and each posting is counted once. `totals` sums the MTU
+rows. Postings without an MTU are listed separately in `non_mtu_postings` and
+included in `daily_total_cash_eur`. Positive cash denotes participant receipts.
+
 The public entry point is `from emst import Market`. Participants and assets
 can have arbitrary IDs. The public daily engine does not depend on the example's
 `thermal_A`, `load_T` or `battery` identifiers.
@@ -151,13 +190,23 @@ power under the ramp constraints. The default provides a one-MTU desync to zero.
 Legacy `startup_minutes`/`shutdown_minutes` inputs generate half-hour profiles;
 they must be multiples of 30 minutes.
 
-Power follows the prescribed linear path in sync, soak and desync. Dispatch uses
-a two-segment piecewise linear path, allowing ramp-and-hold behaviour within the
-MTU. This avoids the artificial endpoint oscillation caused by one straight ramp
-when the noon starting state changes. Terminal/midpoint power are continuous
-physical auxiliaries. MWh is the exact trapezoidal integral. RTBM retains ten
-30-second segments and follows prescribed phase endpoints; terminal power carries
-into the next interval.
+ISP dispatch is the average power for each half-hour:
+`(MS_mwh + energy_up_mwh - energy_down_mwh) / hours`.
+Ramping limits the difference between consecutive average dispatch powers to
+the ramp rate times the MTU duration. The first MTU uses the supplied initial
+boundary power. The noon-onward rerun uses the forecast boundary state formed
+from information available at its 11:00 cutoff.
+
+ISP has no thermal endpoint, midpoint or within-MTU trajectory variables.
+Reserve headroom is applied to average dispatch power. Declared transition
+profiles supply fixed MTU-average power in sync, soak and desync. These averages
+come from successive technical profile points. Desync starts from minimum
+dispatch power for this profile conversion. If a run starts within a transition,
+its first average uses the supplied boundary power and the next profile point.
+
+RTBM retains physical ten-segment trajectories within each five-minute interval.
+Prescribed transition endpoints come from unit technical profiles, and actual
+terminal power carries into the next RTBM interval.
 
 Only `dispatch` can provide reserves, including RR where the specialised adapter
 supports it. All non-dispatch phase reserve bounds are zero. Startup is charged
@@ -174,8 +223,10 @@ completed phase to its successor at the boundary; unfinished phases remain in
 `ending_states`, ready to pass into the next day's `ThermalState` constructor.
 There is no artificial end-of-day shutdown requirement.
 
-`phase`, `phase_binaries`, `phase_elapsed_before_minutes`, `nodes_mw`,
-`trajectory_step_hours` and `thermal_state_binary_count` are exported for auditing.
+`phase`, `phase_binaries`, `phase_elapsed_before_minutes` and
+`thermal_state_binary_count` describe the ISP phases.
+`ramp_reference_power_mw` records the initial boundary or preceding MTU average.
+`nodes_mw` and `trajectory_step_hours` describe RTBM physical trajectories.
 `python examples/thermal_phases_day.py` runs a complete phase-cycle day. Specialised
 startup classes, emergency procurement and historical accounting remain adapter
 features; shared phase/physical kernels do not certify official equivalence.

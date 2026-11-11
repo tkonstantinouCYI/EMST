@@ -7,7 +7,7 @@ from .model import PRODUCTS,UP,DOWN,RESPONSE_HOURS
 from .physics import thermal_path
 from .offers import asset_energy_prices
 from .relaxation import build as build_slacks,quantities as slack_quantities,used as slack_used
-from .phases import build as build_phases,bind_endpoint,row_phase,canonical,PHASES
+from .phases import build as build_phases,bind_average_power,row_phase,canonical,PHASES
 
 
 def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None):
@@ -42,7 +42,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 on[k]=data['on'][j];start[k]=data['start'][j];stop[k]=data['stop'][j]
                 dispatch_flag=data['flags']['dispatch',j]
             m+=p[k]>=0;m+=p[k]<=v['capacity_mw']*on[k]
-            prev_p=initial['power_mw'] if j==0 else end[a.id,j-1]
+            prev_p=initial['power_mw'] if j==0 else (end[a.id,j-1] if rtbm else p[a.id,j-1])
             minimum=v['minimum_mw']*dispatch_flag
             rup=rdn=0
             if not rtbm:
@@ -53,28 +53,27 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                     terms.append(reserve[a.id,j,product]*v.get('reserve_prices',{}).get(product,v['reserve_cost']))
                 rup=lp.lpSum(reserve[a.id,j,x] for x in UP)
                 rdn=lp.lpSum(reserve[a.id,j,x] for x in DOWN)
-            segments=10 if rtbm else 2
-            entering_dispatch=rtbm and phase=='dispatch' and initial_phase!='dispatch' and j==0
-            node_minimum=0 if entering_dispatch else minimum
-            paths[k],integrated=thermal_path(m,f'thermal_path_{i}_{j}',prev_p,dt,segments,
-                v['capacity_mw'],on[k],node_minimum,v['ramp_mw_hour'],upward_headroom=rup,downward_headroom=rdn)
-            end[k]=paths[k][-1]
-            m+=p[k]*dt==integrated
-            m+=p[k]-rdn>=node_minimum
-            m+=p[k]+rup<=v['capacity_mw']*on[k]
-            m+=end[k]-rdn>=minimum
             if not rtbm:
-                bind_endpoint(m,data,j,end[k],v['capacity_mw'])
-                transient=on[k]-dispatch_flag
-                for n,node in enumerate(paths[k][1:-1],1):
-                    linear=prev_p+(end[k]-prev_p)*n/segments
-                    m+=node-linear<=v['capacity_mw']*(1-transient)
-                    m+=linear-node<=v['capacity_mw']*(1-transient)
-            elif phase in ('sync','soak','desync'):
-                target=reference[a.id]['phase_terminal_mw']
-                for n,node in enumerate(paths[k][1:],1):
-                    fraction=(j+n/segments)/len(intervals)
-                    m+=node==initial['power_mw']+(target-initial['power_mw'])*fraction
+                m+=p[k]-prev_p<=v['ramp_mw_hour']*dt, f'average_ramp_up_{i}_{j}'
+                m+=prev_p-p[k]<=v['ramp_mw_hour']*dt, f'average_ramp_down_{i}_{j}'
+                m+=p[k]-rdn>=minimum
+                m+=p[k]+rup<=v['capacity_mw']*on[k]
+                bind_average_power(m,data,j,p[k],v['capacity_mw'],v['minimum_mw'],initial['power_mw'])
+            else:
+                entering_dispatch=phase=='dispatch' and initial_phase!='dispatch' and j==0
+                node_minimum=0 if entering_dispatch else minimum
+                paths[k],integrated=thermal_path(m,f'thermal_path_{i}_{j}',prev_p,dt,10,
+                    v['capacity_mw'],on[k],node_minimum,v['ramp_mw_hour'])
+                end[k]=paths[k][-1]
+                m+=p[k]*dt==integrated
+                m+=p[k]>=node_minimum
+                m+=end[k]>=minimum
+                if phase in ('sync','soak','desync'):
+                    index=int(reference[a.id]['phase_elapsed_before_minutes']//30)
+                    target=v['phase_profiles_mw'][phase][index]
+                    for n,node in enumerate(paths[k][1:],1):
+                        fraction=(j+n/10)/len(intervals)
+                        m+=node==initial['power_mw']+(target-initial['power_mw'])*fraction
             bid=a.strategy.price('thermal',v['marginal_cost'],rules)
             if rtbm:
                 penalty=rules['schedule_deviation_cost_eur_mwh']
@@ -182,7 +181,13 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 row.update(up_offer_eur_mwh=offer_up,down_offer_eur_mwh=offer_down)
             elif a.technology=='storage':row.update(up_offer_eur_mwh=float(a.strategy.parameters.get('balancing_up_price',100)),down_offer_eur_mwh=float(a.strategy.parameters.get('balancing_down_price',0)))
             else:row.update(up_offer_eur_mwh=0.,down_offer_eur_mwh=a.parameters['energy_down_price'],forecast_available_mwh=res_available[a.id,j]*t.hours,reference_energy_mwh=res_base[a.id,j]*t.hours,commercial_curtailment_mwh=(res_available[a.id,j]-res_base[a.id,j])*t.hours,price_forming=True,reason='RES_down_offer')
-            if a.technology=='thermal':row.update(initial_mw=float(lp.value(paths[a.id,j][0])),end_mw=end[a.id,j].value(),nodes_mw=[float(lp.value(x)) for x in paths[a.id,j]],trajectory_step_hours=t.hours/(10 if rtbm else 2),on=round(lp.value(on[a.id,j])),start=round(lp.value(start[a.id,j])),stop=round(lp.value(stop[a.id,j])))
+            if a.technology=='thermal':
+                row.update(on=round(lp.value(on[a.id,j])),start=round(lp.value(start[a.id,j])),stop=round(lp.value(stop[a.id,j])))
+                if rtbm:
+                    row.update(initial_mw=float(lp.value(paths[a.id,j][0])),end_mw=end[a.id,j].value(),
+                        nodes_mw=[float(lp.value(x)) for x in paths[a.id,j]],trajectory_step_hours=t.hours/10)
+                else:
+                    row['ramp_reference_power_mw']=states[a.id]['power_mw'] if j==0 else float(lp.value(p[a.id,j-1]))
             elif a.technology=='storage':row.update(charge_mwh=charge[a.id,j].value()*t.hours,discharge_mwh=discharge[a.id,j].value()*t.hours,soc_mwh=soc[a.id,j].value())
             if a.technology=='storage':
                 raw_soc=row['soc_mwh'];limit=a.parameters['capacity_mwh']
@@ -195,8 +200,9 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                     age+=j*t.minutes
                 else:phase,flags,age=row_phase(phase_data[a.id],j)
                 row.update(phase=phase,phase_binaries=flags,phase_elapsed_before_minutes=age,
-                    phase_initial_mw=float(lp.value(paths[a.id,j][0])),phase_terminal_mw=end[a.id,j].value(),
                     startup_cost_eur=lp.value(start[a.id,j])*a.parameters['startup_cost'])
+                if rtbm:
+                    row.update(phase_initial_mw=float(lp.value(paths[a.id,j][0])),phase_terminal_mw=end[a.id,j].value())
             group[a.id]=row
         rows.append(dict(period=t.period,at=t.start.isoformat(),hours=t.hours,assets=group,
                          res_curtailment_mw=float(lp.value(curt[j])),res_commercial_curtailment_mw=commercial_curt[j],
@@ -218,6 +224,6 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 frozen_discrete=frozen,rows=rows,pricing_method="fixed_discrete_lp_shadow_prices",
                 reserve_dual_ranges=bounds,price_range_diagnostics_performed=price_ranges and not rtbm,capacity_products=[] if rtbm else list(PRODUCTS),
                 demand_mw=list(demand),res_available_mw=list(res),requirements_mw={} if rtbm else deepcopy(requirements),initial_state=deepcopy(states),
-                thermal_physics='shared_thermal_path_kernel_v1',commercial_mwh=deepcopy(commercial),
+                thermal_physics='RTBM_thermal_path' if rtbm else 'MTU_average_power_ramps',commercial_mwh=deepcopy(commercial),
                 thermal_state_binary_count=4*len(thermal)*len(intervals) if not rtbm else 0,
                 power_definition='(MS_mwh + energy_up_mwh - energy_down_mwh) / hours')

@@ -330,8 +330,16 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
             if a.technology!='thermal':continue
             rows=[r['assets'][a.id] for r in run['rows']]
             initial=run['initial_state'][a.id]
-            checks['thermal_four_phase_constraints'] &= all(check_rows(rows,initial['stage'],initial['duration_minutes'],a.parameters['phase_profiles_mw']).values())
+            checks['thermal_four_phase_constraints'] &= all(check_rows(rows,initial['stage'],initial['duration_minutes'],a.parameters['phase_profiles_mw'],a.parameters['minimum_mw'],initial['power_mw']).values())
             checks['thermal_power_from_market_schedule_and_energy'] &= all(abs(r['power_mw']-(run['commercial_mwh'][a.id][j]+r['up_mwh']-r['down_mwh'])/.5)<1e-5 for j,r in enumerate(rows))
+    checks['ISP_average_power_ramps']=True
+    for run in runs:
+        for asset in controllable:
+            previous=run['initial_state'][asset.id]['power_mw']
+            for row in run['rows']:
+                power=row['assets'][asset.id]['power_mw']
+                checks['ISP_average_power_ramps'] &= abs(power-previous)<=asset.parameters['ramp_mw_hour']*row['hours']+1e-5
+                previous=power
     renewable_assets=[a for a in assets if a.technology=='res']
     checks['RES_down_only_no_capacity']=all(abs(r['assets'][a.id]['up_mwh'])<1e-8 and all(abs(v)<1e-8 for v in r['assets'][a.id]['reserve_mw'].values()) for r in rtbm for a in renewable_assets)
     checks['RES_reference_minus_instruction']=all(abs(r['assets'][a.id]['energy_mwh']-r['assets'][a.id]['reference_energy_mwh']+r['assets'][a.id]['down_mwh'])<1e-6 for r in rtbm for a in renewable_assets)
@@ -367,7 +375,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     manifest=dict(library_version='0.3.1',ruleset=rules,parameter_id=parameters['id'],day=str(day),
         runtime=dict(python=platform.python_version(),pulp=lp.__version__,solver='HiGHS' if lp.HiGHS().available() else 'CBC'),
         scope='daily_accrual',excluded_uplifts=['UA-3','UA-4'],current_rules_conformance_verified=False,synthetic_parameters=parameters.get('synthetic',False),
-        physical_model='shared_piecewise_linear_ISP_and_30_second_thermal_RTBM_trajectory_kernel',
+        physical_model='ISP_MTU_average_dispatch_and_30_second_RTBM_trajectories',
         actual_delivery='equal_to_RTBM_dispatch',forecast_revisions=False,
         rtbm_forecast_method='TSO_baseline_plus_latest_completed_RTU_error',
         system_forecast_source=forecast_source,system_observation_source=observation_source,

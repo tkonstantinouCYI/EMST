@@ -5,7 +5,7 @@ from .optimization import solve,lp_optimal_value
 from .operations import priority_curtailment
 from .physics import thermal_path
 from .relaxation import build as build_slacks,quantities as slack_quantities,used as slack_used
-from .phases import boundary_state,unit_profiles,canonical
+from .phases import unit_profiles,boundary_state,canonical
 
 
 def _actual_delivery(units,state,isp,instructed,targets,dt,segments,required_energy,failures):
@@ -85,7 +85,10 @@ def clear_rtu(interval, units, state, isp_rows, commercial_mwh, demand_mw, res_m
             smooth.append(.01*variation)
             if row.get("soaking",False):
                 remaining=(30-interval.local.minute%30)/5
-                target=state[u.id]['end_mw']+(row['phase_terminal_mw']-state[u.id]['end_mw'])*(j/segments)/remaining
+                profile=unit_profiles(u)[row.get('phase','soak')]
+                index=int(row.get('phase_elapsed_before_minutes',0)//30)
+                terminal=profile[index] if profile else row.get('phase_terminal_mw',u.minimum_mw)
+                target=state[u.id]['end_mw']+(terminal-state[u.id]['end_mw'])*(j/segments)/remaining
                 m += nodes[j]==target
         terminal_deviation=lp.LpVariable(f"terminal_deviation_{i}",0)
         m += terminal_deviation >= endpoint[u.id]-energy[u.id]/dt

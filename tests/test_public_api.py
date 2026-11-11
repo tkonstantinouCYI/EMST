@@ -91,10 +91,10 @@ class StoragePermissionTests(unittest.TestCase):
             if stage=='offline':
                 self.assertEqual([q['assets']['carried']['on'] for q in r['rows'][:2]],[0,0])
             elif stage=='startup':
-                self.assertAlmostEqual(row['end_mw'],20)
+                self.assertNotIn('end_mw',row)
                 self.assertAlmostEqual(row['energy_mwh'],.5*(5+20)*.5)
             else:
-                self.assertAlmostEqual(row['end_mw'],0)
+                self.assertNotIn('end_mw',row)
                 self.assertAlmostEqual(row['energy_mwh'],.5*(10+0)*.5)
 
     def setup_case(self,energy,capacity):

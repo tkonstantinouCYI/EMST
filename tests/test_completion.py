@@ -318,7 +318,8 @@ class OperationalTests(unittest.TestCase):
         r=schedule([u],s["periods"][:4],[2.5,7.5,15,20],[0]*4,{u.id:[0]*4},
             {p:[0]*4 for p in PRODUCTS},{u.id:dict(on=0,end_mw=0,duration_periods=100)},
             s["initial_cutoff"],"cold_soak",False)
-        self.assertEqual([x["end_mw"] for x in r["rows"][:3]],[5,10,20])
+        self.assertEqual([x["power_mw"] for x in r["rows"][:3]],[2.5,7.5,15])
+        self.assertTrue(all("end_mw" not in x for x in r["rows"]))
         self.assertEqual(r["rows"][0]["startup_class"],"cold")
         self.assertEqual(r["rows"][0]["startup_cost_eur"],270)
         self.assertEqual([x["agc"] for x in r["rows"]],[0,0,0,1])

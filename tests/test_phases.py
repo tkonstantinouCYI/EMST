@@ -78,7 +78,7 @@ class ThermalPhaseTests(unittest.TestCase):
                 intervals=rtus[t*6+k:t*6+6];n=len(intervals)
                 load=[reference['unit']['power_mw']]*n
                 if reference['unit']['phase'] in ('sync','soak','desync'):
-                    start=state['unit']['power_mw'];target=reference['unit']['end_mw']
+                    start=state['unit']['power_mw'];target=a.parameters['phase_profiles_mw'][reference['unit']['phase']][int(reference['unit']['phase_elapsed_before_minutes']//30)]
                     load=[start+(target-start)*(j+.5)/n for j in range(n)]
                 r=dispatch([a],state,intervals,load,[0]*n,
                     {'unit':[0]*n},{p:[0]*n for p in PRODUCTS},market.ruleset.to_dict(),
@@ -86,7 +86,7 @@ class ThermalPhaseTests(unittest.TestCase):
                 starts+=r['start']
                 _advance([a],state,{'unit':r},5)
             if reference['unit']['phase'] in ('sync','soak','desync'):
-                self.assertAlmostEqual(state['unit']['power_mw'],reference['unit']['end_mw'],places=5)
+                self.assertAlmostEqual(state['unit']['power_mw'],a.parameters['phase_profiles_mw'][reference['unit']['phase']][int(reference['unit']['phase_elapsed_before_minutes']//30)],places=5)
         self.assertEqual(starts,1)
         self.assertEqual(state['unit']['stage'],'offline')
 

@@ -123,6 +123,24 @@ def bind_endpoint(model,data,t,endpoint,capacity):
         model+=target-endpoint<=capacity*(1-flag)
 
 
+
+def average_profiles(profile, minimum_mw):
+    starts={'sync':0., 'soak':profile['sync'][-1] if profile['sync'] else 0., 'desync':minimum_mw}
+    return {phase:tuple(((values[i-1] if i else starts[phase])+value)/2
+                        for i,value in enumerate(values))
+            for phase,values in profile.items()}
+
+
+def bind_average_power(model,data,t,power,capacity,minimum_mw,initial_power):
+    averages=average_profiles(data['profiles'],minimum_mw)
+    if t==0 and data['initial_stage'] in averages:
+        phase=data['initial_stage'];index=int(data['age_minutes']//30)
+        values=list(averages[phase])
+        values[index]=(initial_power+data['profiles'][phase][index])/2
+        averages[phase]=tuple(values)
+    bind_endpoint(model,{**data,'profiles':averages},t,power,capacity)
+
+
 def row_phase(data,t):
     flags={q:int(round(lp.value(data['flags'][q,t]))) for q in PHASES}
     phase=next((q for q,v in flags.items() if v),'offline')
@@ -134,13 +152,15 @@ def row_phase(data,t):
     return phase,flags,age
 
 
-def check_rows(rows,initial_stage,initial_age,profile):
+def check_rows(rows,initial_stage,initial_age,profile,minimum_mw=None,initial_power_mw=None):
     """Independent phase/dwell/profile audit of solved half-hour rows."""
     chain=['offline']+[q for q in ('sync','soak') if profile[q]]+['dispatch']+(['desync'] if profile['desync'] else [])
     successor=dict(zip(chain,chain[1:]+chain[:1]))
     previous=canonical(initial_stage);elapsed=initial_age
     checks=dict(one_hot=True,transitions_and_durations=True,phase_profiles=True,reserve_eligibility=True,startup_once=True)
-    for row in rows:
+    minimum_mw=minimum_mw if minimum_mw is not None else max((v[-1] for k,v in profile.items() if k!='desync' and v),default=0.)
+    averages=average_profiles(profile,minimum_mw)
+    for position,row in enumerate(rows):
         phase=row['phase'];flags=row['phase_binaries']
         checks['one_hot'] &= set(flags)==set(PHASES) and all(x in (0,1) for x in flags.values()) and sum(flags.values())==int(phase!='offline') and (phase=='offline' or flags.get(phase)==1)
         if previous in profile:
@@ -151,9 +171,15 @@ def check_rows(rows,initial_stage,initial_age,profile):
         checks['transitions_and_durations'] &= row['phase_elapsed_before_minutes']==before
         if phase in profile:
             index=int(before//30)
-            checks['phase_profiles'] &= index<len(profile[phase]) and abs(row['end_mw']-profile[phase][index])<1e-5
-            nodes=row['nodes_mw']
-            checks['phase_profiles'] &= all(abs(v-(nodes[0]+(nodes[-1]-nodes[0])*k/(len(nodes)-1)))<1e-5 for k,v in enumerate(nodes))
+            if 'nodes_mw' in row:
+                checks['phase_profiles'] &= index<len(profile[phase]) and abs(row['end_mw']-profile[phase][index])<1e-5
+                nodes=row['nodes_mw']
+                checks['phase_profiles'] &= all(abs(v-(nodes[0]+(nodes[-1]-nodes[0])*k/(len(nodes)-1)))<1e-5 for k,v in enumerate(nodes))
+            else:
+                expected=averages[phase][index]
+                if position==0 and initial_power_mw is not None and canonical(initial_stage)==phase:
+                    expected=(initial_power_mw+profile[phase][index])/2
+                checks['phase_profiles'] &= abs(row['power_mw']-expected)<1e-5
         if phase!='dispatch':checks['reserve_eligibility'] &= all(abs(x)<1e-6 for x in row['reserve_mw'].values())
         checks['startup_once'] &= row['start']==int(previous=='offline' and phase!='offline')
         elapsed=before+30;previous=phase

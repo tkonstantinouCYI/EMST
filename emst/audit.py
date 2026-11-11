@@ -82,8 +82,9 @@ def audit_day(scenario,dam,schedules,runs,rtus,bridges,ledger,revision_result,fi
             for e,r in group.items():
                 u=units[e]
                 previous=run["initial_state"][e] if offset==0 else grouped[t-1][e]
-                prior_end=previous["end_mw"]
-                a.check("ISP",f"{run['id']} trajectory {e} {t}",(r["power_mw"]*.5-r["trajectory_step_hours"]*(.5*r["nodes_mw"][0]+sum(r["nodes_mw"][1:-1])+.5*r["nodes_mw"][-1])),tolerance=1e-4)
+                prior_power=previous["end_mw"] if offset==0 else previous["power_mw"]
+                a.check("ISP",f"{run['id']} average energy {e} {t}",
+                    r["power_mw"]*.5-run["commercial_mwh"][e][offset]-r["up_mwh"]+r["down_mwh"],tolerance=1e-4)
                 flags=r.get('phase_binaries')
                 if flags is not None:
                     a.check('ISP',f"{run['id']} one-hot phases {e} {t}",ok=sum(flags.values())<=1 and bool(r['on'])==bool(sum(flags.values())))
@@ -91,12 +92,8 @@ def audit_day(scenario,dam,schedules,runs,rtus,bridges,ledger,revision_result,fi
                 up=sum(r["reserve_mw"][p] for p in UP)
                 down=sum(r["reserve_mw"][p] for p in DOWN)
                 a.check("ISP",f"{run['id']} headroom {e} {t}",max(0,r["power_mw"]+up-u.maximum_mw*(r["on"]+r["stop"]),u.minimum_mw*(r["on"]-int(r.get("soaking",False) or r["start"]))+down-r["power_mw"]),tolerance=1e-4)
-                nodes=r['nodes_mw']
-                a.check('ISP',f"{run['id']} node continuity {e} {t}",nodes[0]-prior_end,tolerance=1e-4)
-                a.check('ISP',f"{run['id']} subinterval ramps {e} {t}",max(0,max(abs(b-a) for a,b in zip(nodes,nodes[1:]))-u.ramp_mw_hour*r['trajectory_step_hours']),tolerance=1e-4)
-                up_limit=u.startup_limit_mw if r["start"] else u.ramp_mw_hour*.5
-                down_limit=u.shutdown_limit_mw if r["stop"] else u.ramp_mw_hour*.5
-                a.check("ISP",f"{run['id']} ramps {e} {t}",max(0,r["end_mw"]-prior_end-up_limit,prior_end-r["end_mw"]-down_limit),tolerance=1e-4)
+                a.check("ISP",f"{run['id']} average ramps {e} {t}",
+                    max(0,abs(r["power_mw"]-prior_power)-u.ramp_mw_hour*.5),tolerance=1e-4)
                 prev_on=previous["on"]
                 a.check("ISP",f"{run['id']} transition {e} {t}",r["on"]-prev_on-r["start"]+r["stop"],tolerance=0)
                 recent=[grouped[k][e] for k in range(max(min(grouped),t-u.min_up+1),t+1)]
@@ -108,7 +105,7 @@ def audit_day(scenario,dam,schedules,runs,rtus,bridges,ledger,revision_result,fi
             phase=init.get('stage','soak' if init['on'] and init['duration_periods']<u.soak_periods else 'dispatch' if init['on'] else 'offline')
             age=init.get('phase_elapsed_minutes',init['duration_periods']*30)
             selected=[r for r in run['rows'] if r['entity']==entity]
-            for name,passed in check_rows(selected,phase,age,unit_profiles(u)).items():
+            for name,passed in check_rows(selected,phase,age,unit_profiles(u),u.minimum_mw,init["end_mw"]).items():
                 a.check('ISP_phases',f"{run['id']} {entity} {name}",ok=passed)
         a.check("ISP_pricing",f"{run['id']} MILP/LP objective",run["milp_objective_eur"]-run["fixed_lp_objective_eur"],tolerance=.001)
         costs=run['objective_components_eur']

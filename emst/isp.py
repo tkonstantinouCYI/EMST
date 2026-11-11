@@ -2,8 +2,7 @@
 from dataclasses import asdict
 import pulp as lp
 from .model import PRODUCTS, UP, DOWN, RESPONSE_HOURS
-from .physics import thermal_path
-from .phases import build as build_phases,bind_endpoint,row_phase,unit_profiles,canonical
+from .phases import build as build_phases,bind_average_power,row_phase,unit_profiles,canonical
 from .relaxation import build as build_slacks,quantities as slack_quantities,used as slack_used,configuration as slack_configuration
 from .optimization import solve, freeze_discrete, dual_face, perturbation
 
@@ -23,9 +22,9 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
     if rr_awards is not None and (rr_prices is None or len(rr_prices)!=count):
         raise ValueError("Dated monthly RR quotes are required with fixed awards")
     m = lp.LpProblem(run_id,lp.LpMinimize)
-    power, end, on, start, stop, agc, up, down, reserve = {},{},{},{},{},{},{},{},{}
+    power, on, start, stop, agc, up, down, reserve = {},{},{},{},{},{},{},{}
     age,hot,warm,cold={},{},{},{}
-    phase_data={};paths={}
+    phase_data={}
     for i,u in enumerate(units):
         init=initial_state[u.id];profile=unit_profiles(u)
         phase=init.get('stage','soak' if init['on'] and init['duration_periods']<u.soak_periods else 'dispatch' if init['on'] else 'offline')
@@ -34,7 +33,6 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
     for i,u in enumerate(units):
         for j,t in enumerate(periods):
             key = (u.id,j)
-            end[key] = lp.LpVariable(f"end_{i}_{j}",0,u.maximum_mw)
             data=phase_data[u.id]
             on[key]=data['on'][j];start[key]=data['start'][j];stop[key]=data['stop'][j]
             agc[key]=data['flags']['dispatch',j]
@@ -74,12 +72,11 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
             key = (u.id,j)
             dt = t.hours
             prior_on = init["on"] if j==0 else on[u.id,j-1]
-            prior_end = init["end_mw"] if j==0 else end[u.id,j-1]
+            prior_power = init["end_mw"] if j==0 else power[u.id,j-1]
             available=u.maximum_mw if availability_mw is None else availability_mw[u.id][j]
             if not 0<=available<=u.maximum_mw:raise ValueError("Invalid declared availability")
             m += on[key] <= int(available>=u.minimum_mw and available>0)
             if mandatory_on is not None:m += on[key]>=mandatory_on[u.id][j]
-            m += end[key] <= available*on[key]
             m += power[key] <= available*(on[key]+stop[key])
             m += on[key]-prior_on == start[key]-stop[key]
             m += start[key]+stop[key] <= 1
@@ -95,20 +92,10 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
             m += previous_age >= u.hot_start_hours-big_age*(1-warm[key])
             m += previous_age <= u.warm_start_hours+big_age*(1-warm[key])
             m += previous_age >= u.warm_start_hours-big_age*(1-cold[key])
-            m += end[key] <= u.maximum_mw*on[key]
-            # Linear trajectories are a declared physical approximation, not an
-            # instruction-volume calculation. RTBM independently awards MWh.
-            nodes,energy=thermal_path(m,f'ISP_path_{units.index(u)}_{j}',prior_end,dt,2,
-                u.maximum_mw,on[key],0,u.ramp_mw_hour)
-            paths[key]=nodes
-            m += nodes[1]-(prior_end+end[key])/2<=u.maximum_mw*(1-soaking)
-            m += (prior_end+end[key])/2-nodes[1]<=u.maximum_mw*(1-soaking)
-            m += end[key]==nodes[-1]
-            m += power[key]*dt==energy
-            m += end[key] >= u.minimum_mw*(on[key]-soaking-inherited_soak)
-            bind_endpoint(m,phase_data[u.id],j,end[key],u.maximum_mw)
-            m += end[key]-prior_end <= u.ramp_mw_hour*dt*(1-start[key])+u.startup_limit_mw*start[key]
-            m += prior_end-end[key] <= u.ramp_mw_hour*dt*(1-stop[key])+u.shutdown_limit_mw*stop[key]
+            m += power[key] >= u.minimum_mw*agc[key]
+            bind_average_power(m,phase_data[u.id],j,power[key],u.maximum_mw,u.minimum_mw,init["end_mw"])
+            m += power[key]-prior_power <= u.ramp_mw_hour*dt
+            m += prior_power-power[key] <= u.ramp_mw_hour*dt
             m += lp.lpSum(start[u.id,k] for k in range(max(0,j-u.min_up+1),j+1)) <= on[key]
             m += lp.lpSum(stop[u.id,k] for k in range(max(0,j-u.min_down+1),j+1)) <= 1-on[key]
             residual = max(0,(u.min_up if init["on"] else u.min_down)-init["duration_periods"])
@@ -121,9 +108,6 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
             m += power[key]+r_up <= u.maximum_mw*(on[key]+stop[key])
             m += power[key]+r_up <= available*(on[key]+stop[key])
             m += power[key]-r_down >= u.minimum_mw*(on[key]-soaking-inherited_soak)
-            # Both start and end must carry headroom for a linear trajectory.
-            m += end[key]+r_up <= u.maximum_mw*on[key]
-            m += end[key]-r_down >= u.minimum_mw*(on[key]-soaking-inherited_soak)
             for p in PRODUCTS:
                 r = reserve[u.id,j,p]
                 m += r <= u.reserve_limit_mw*agc[key]
@@ -187,22 +171,20 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
             key = u.id,j
             phase,flags,phase_age=row_phase(phase_data[u.id],j)
             soaking_active=phase in ('sync','soak','desync')
-            prior_endpoint=initial_state[u.id]["end_mw"] if j==0 else end[u.id,j-1].value()
+            prior_power=initial_state[u.id]["end_mw"] if j==0 else power[u.id,j-1].value()
             rows.append({"period":t.period,"entity":u.id,"power_mw":power[key].value(),
-                "end_mw":end[key].value(),"on":round(on[key].value()),
+                "ramp_reference_power_mw":prior_power,"on":round(on[key].value()),
                 "up_mwh":up[key].value(),"down_mwh":down[key].value(),
                 "start":round(start[key].value()),"stop":round(stop[key].value()),
                 "agc":round(agc[key].value()),
                 "phase":phase,"phase_binaries":flags,"phase_elapsed_before_minutes":phase_age,
-                "nodes_mw":[float(lp.value(v)) for v in paths[key]],"trajectory_step_hours":t.hours/2,
                 "up_offer_eur_mwh":u.energy_eur_mwh if u.energy_up_eur_mwh is None else u.energy_up_eur_mwh,
                 "down_offer_eur_mwh":u.energy_eur_mwh if u.energy_down_eur_mwh is None else u.energy_down_eur_mwh,
                 "startup_class":"hot" if hot[key].value()>.5 else "warm" if warm[key].value()>.5 else "cold" if cold[key].value()>.5 else None,
                 "startup_cost_eur":u.startup_eur*(hot[key].value()+u.warm_start_multiplier*warm[key].value()+u.cold_start_multiplier*cold[key].value()),
                 "offline_hours":age[key].value(),
                 "available_mw":u.maximum_mw if availability_mw is None else availability_mw[u.id][j],
-                "soaking":soaking_active,"phase_initial_mw":prior_endpoint if soaking_active else None,
-                "phase_terminal_mw":end[key].value() if soaking_active else None,
+                "soaking":soaking_active,
                 "reserve_mw":{p:reserve[u.id,j,p].value() for p in PRODUCTS},
                 "reserve_offer_eur_mw_period":{p:rr_prices[j] if p=="RR_up" and rr_awards is not None else u.reserve_eur_mw_period[p] for p in PRODUCTS},
                 "reserve_price_eur_mw_period":{p:prices[f"requirement_{p}_{j}"] for p in PRODUCTS}})
@@ -224,7 +206,7 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
     return {"solution_class":"relaxed_with_slack" if slack_used(slacks) else "feasible_without_slack","objective_components_eur":components,"slack_by_period":slacks,"physical_security_feasible":not slack_used(slacks),"res_offer_rows":res_rows,"res_commercial_curtailment_mw":commercial_curt,"id":run_id,"cutoff":cutoff.isoformat(),"first_period":periods[0].period,
             "status":"Optimal","milp_objective_eur":milp_objective,
             "fixed_lp_objective_eur":lp_objective,"frozen_discrete":frozen,
-            "initial_state":initial_state,"rows":rows,
+            "initial_state":initial_state,"rows":rows,"commercial_mwh":commercial_mwh,
             "thermal_state_binary_count":4*count*len(units),
             "power_definition":"(MS_mwh + energy_up_mwh - energy_down_mwh) / hours","demand_mw":list(demand_mw),
             "res_available_mw":list(res_mw),"res_curtailment_mw":[float(lp.value(curtailed[j])) for j in range(count)],
@@ -235,6 +217,6 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
             "price_range_diagnostics_performed":price_ranges,
             "dual_tie_convention":"solver_optimal_dual_vector",
             "lexicographic_tolerance_eur_mw":None,
-            "perturbations":diagnostics,"physical_approximation":"prescribed_linear_phases_and_two_segment_dispatch_v1",
+            "perturbations":diagnostics,"physical_approximation":"MTU_average_dispatch_and_ramps",
             "reserve_shortfalls_mw":shortages,
             "shortage":any(q>1e-6 for values in shortages.values() for q in values),"optimality_gap":0}

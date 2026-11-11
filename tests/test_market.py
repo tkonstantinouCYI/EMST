@@ -116,7 +116,7 @@ class PricingTests(unittest.TestCase):
         self.assertEqual(row["phase_binaries"]["desync"],1)
         self.assertEqual(row["on"],1)
         self.assertAlmostEqual(row["power_mw"],10)
-        self.assertAlmostEqual(row["end_mw"],0)
+        self.assertNotIn("end_mw",row)
 
 
 class SettlementTests(unittest.TestCase):

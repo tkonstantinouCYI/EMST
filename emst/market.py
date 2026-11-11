@@ -76,6 +76,14 @@ class MarketResults:
         except ImportError:raise ImportError("Install emst-cyprus[dataframes] for DataFrame output") from None
         return {name:pd.DataFrame(getattr(self,name)) for name in ("orders","rtbm","meters","ledger")}
 
+    def to_readable(self, *, audience='shared', participant=None):
+        from .reporting import readable_results
+        return readable_results(self, audience=audience, participant=participant)
+
+    def save_readable(self, directory):
+        from .reporting import save_readable_results
+        return save_readable_results(self, directory)
+
 
 class Market:
     """Owns participants and assets; run inputs contain all time-varying values.
