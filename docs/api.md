@@ -120,6 +120,11 @@ owner's default. `Market.available_strategies()` lists:
 | Supplier | `forecast_demand`, `price_responsive` |
 | Storage | `fixed_circular`, `forecast_arbitrage` |
 
+See the [bidding strategy guide](strategies.md) for every strategy's behavior,
+parameters, defaults, units, examples and implementation limitations, including
+the shared supplier implementation and the distinction between ISP and RTBM
+thermal pricing.
+
 The fixed storage strategy defaults to idle if no bid profile is provided.
 `forecast_arbitrage` uses the market-level `price_forecast` passed to `run`; it
 does not receive future cleared prices or actual demand/RES. Strategies generate

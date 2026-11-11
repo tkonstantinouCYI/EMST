@@ -149,7 +149,7 @@ blocks, integrated scheduling and reserve procurement, five-minute balancing,
 daily settlement, consecutive-day state carryover and checkpoint resume.
 Market rules and synthetic parameters are explicit simulation inputs.
 
-[API guide](docs/api.md) · [Multi-day and monthly settlement](docs/multi-day.md)
+[API guide](docs/api.md) · [Bidding strategies: parameters, defaults and examples](docs/strategies.md) · [Multi-day and monthly settlement](docs/multi-day.md)
 
 ## Releases
 
