@@ -65,7 +65,8 @@ def _advance(assets,state,rows,minutes):
 
 
 def run_market(market,time_index,reserve_requirements,price_forecast,historical_rtbm_prices=None,price_ranges=False,
-               system_forecasts=None,system_observations=None,previous_system_observation=None):
+               system_forecasts=None,system_observations=None,previous_system_observation=None,
+               must_run_requirement_mw=None,must_run_supplier_shares=None):
     from .market import MarketResults
     index=timestamps(time_index)
     if not index:raise ValueError('Empty market time index')
@@ -102,7 +103,23 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         else:raw=price_forecast
         prices=[float(v) for v in raw]
         if len(prices)!=48 or not all(math.isfinite(v) for v in prices):raise ValueError('Invalid market price forecast')
+    from .must_run import clear_auction,allocate_awards,post_settlement
+    must_run=None
+    if must_run_supplier_shares is not None and must_run_requirement_mw is None:
+        raise ValueError('Must-run supplier shares require a must-run requirement')
     fm={a.id:[0.]*48 for a in assets};private=[]
+    if must_run_requirement_mw is not None:
+        requirement=mw_values(must_run_requirement_mw,index,'must-run requirement MW')
+        precleared=getattr(market,'_must_run_award',None)
+        award=precleared if precleared is not None else clear_auction(market,{str(day):requirement})[str(day)]
+        if [r['requirement_mw'] for r in award['intervals']]!=requirement:
+            raise ValueError('Precleared must-run requirement mismatch')
+        must_run,fm=allocate_awards(market,award,forecast,must_run_supplier_shares)
+    mandatory={a.id:[0.]*48 for a in assets if a.technology=='thermal'}
+    if must_run:
+        for row in must_run['intervals']:
+            for award in row['awards']:mandatory[award['asset_id']][row['period_index']]=1
+
     if len({c.id for c in market.forwards})!=len(market.forwards):raise ValueError('Duplicate forward contract IDs')
     for c in market.forwards:
         if not rules['markets']['forward']:raise ValueError('Forward market disabled by ruleset')
@@ -171,7 +188,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         observation_update(load[0],renewable[0],previous=previous_system_observation)
     def plan(start,initial):
         return dispatch(assets,initial,periods[start:],load[start:],renewable[start:],
-            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'})
+            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,mandatory_on={a.id:mandatory[a.id][start:] for a in assets if a.technology=='thermal'},price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'})
     first=plan(0,state);first.update(id='ISP_initial',cutoff=datetime.combine(day,time(16),CYPRUS).isoformat(),first_period=0)
     # Initial cutoff is on the previous calendar day.
     from datetime import timedelta
@@ -186,7 +203,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
             [x['res_prediction_mw'] for x in predictions],
             {a.id:[schedules[a.id][t]/6]*n for a in assets},
             {},rules,
-            commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=rows['assets'],rtbm=True,res_forecasts={a.id:[forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
+            mandatory_on={a.id:[mandatory[a.id][t]]*n for a in assets if a.technology=='thermal'},commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=rows['assets'],rtbm=True,res_forecasts={a.id:[forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
         result['system_prediction']=dict(predictions[0],measurement_index=measurement_index)
         return result
     previous=deepcopy(previous_system_observation)
@@ -243,6 +260,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         previous=deepcopy(r['system_observation'])
         rtbm.append(r)
     ledger=Ledger();meters=[]
+    if must_run:post_settlement(ledger,must_run,periods)
     for c in private:
         if c.price_eur_mwh is None:raise ValueError('Daily private cash requires a supplied forward price')
         for t,q in enumerate(c.energy_mwh):ledger.post(f'forward:{c.id}:{t}','S01',f'participant:{c.seller}:private',f'participant:{c.buyer}:private',q,c.price_eur_mwh,periods[t].id,'chapter6','forward_input')
@@ -323,6 +341,12 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         'storage_SOC_bounds':all(-1e-7<=r['assets'][a.id]['soc_mwh']<=a.parameters['capacity_mwh']+1e-7 for r in rtbm for a in controllable if a.technology=='storage'),
         'no_storage_energy_activation_when_disabled':all(abs(r['assets'][a.id]['energy_mwh']-schedules[a.id][r['period']]/6)<1e-6 for r in rtbm for a in controllable if a.technology=='storage' and not rules['storage']['participation_balancing_energy']),
     }
+    if must_run:
+        checks['must_run_requirement_covered']=all(r['awarded_mw']+1e-6>=r['requirement_mw'] for r in must_run['intervals'])
+        checks['must_run_energy_allocation']=all(abs(sum(a['energy_mwh'] for a in r['awards'])-sum(a['energy_mwh'] for a in r['supplier_allocations']))<1e-6 for r in must_run['intervals'])
+        checks['must_run_ISP_dispatch']=all(row['assets'][a.id]['phase']=='dispatch' and row['assets'][a.id]['power_mw']+1e-5>=a.parameters['minimum_mw'] for run in runs for row in run['rows'] for a in controllable if a.technology=='thermal' and mandatory[a.id][row['period']])
+        checks['must_run_RTBM_dispatch']=all(row['assets'][a.id]['phase']=='dispatch' and row['assets'][a.id]['power_mw']+1e-5>=a.parameters['minimum_mw'] for row in rtbm for a in controllable if a.technology=='thermal' and mandatory[a.id][row['period']])
+        checks['must_run_service_recovery']=all(abs(sum((D(e['cash_eur']) for e in ledger.export() if e['component'] in ('S24','S26') and e['period']==p.id),D(0)))<D('1e-20') for p in periods)
     checks['thermal_four_phase_constraints']=True
     checks['thermal_power_from_market_schedule_and_energy']=True
     for run in runs:
@@ -397,7 +421,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     inputs=dict(time_index=[t.isoformat() for t in index],participants=[asdict(p) for p in participants.values()],
         assets=[dict(id=a.id,participant=a.participant,technology=a.technology,parameters=deepcopy(a.parameters),
             strategy=asdict(a.strategy),initial_state=asdict(a.initial_state) if a.initial_state is not None else None) for a in assets],
-        forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
+        must_run=must_run,forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
         system_forecast_mw=tso_rtu,system_observation_mw=observed_rtu,
         previous_system_observation=deepcopy(previous_system_observation),
         storage_bid_profiles_mwh={k:{'buy':v[0],'sell':v[1]} for k,v in profiles.items()},

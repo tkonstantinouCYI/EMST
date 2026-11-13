@@ -27,9 +27,11 @@ def build_market(dataframes=False,storage_energy=False,storage_capacity=False):
         market.add_participant(owner,strategies={'thermal':'marginal_cost'})
     for owner in ('supplier_T','supplier_D','solar_owner','storage_owner'):
         market.add_participant(owner)
-    market.add_thermal('plant_A','producer_A',capacity_mw=180,minimum_mw=20,marginal_cost=65,ramp_mw_hour=1800,
+    market.add_thermal('plant_A','producer_A',capacity_mw=180,minimum_mw=110,marginal_cost=65,ramp_mw_hour=1800,
+        must_run_participation=True,must_run_offer_eur_per_mtu=80,
         startup_cost=350,reserve_cost=4,initial_state=ThermalState('online',160,360))
-    market.add_thermal('plant_B','producer_B',capacity_mw=140,minimum_mw=15,marginal_cost=95,ramp_mw_hour=1500,
+    market.add_thermal('plant_B','producer_B',capacity_mw=140,minimum_mw=70,marginal_cost=95,ramp_mw_hour=1500,
+        must_run_participation=True,must_run_offer_eur_per_mtu=60,
         startup_cost=250,reserve_cost=2.5,initial_state=ThermalState('online',100,240))
     market.add_thermal('plant_C','producer_C',capacity_mw=100,minimum_mw=10,marginal_cost=145,ramp_mw_hour=1200,
         startup_cost=150,reserve_cost=3,initial_state=ThermalState('offline',0,600))
@@ -58,7 +60,7 @@ def main():
     # A user supplies TSO forecasts independently of participants' bid forecasts.
     tso={'demand':[sum(float(a.forecast.iloc[t,0] if args.dataframes else a.forecast[t]) for a in market.assets.values() if a.technology=='supplier')+1 for t in range(48)],
          'res':[float(market.assets['solar_portfolio'].forecast.iloc[t,0] if args.dataframes else market.assets['solar_portfolio'].forecast[t])*.99 for t in range(48)]}
-    results=market.run(time_index=index,system_forecasts=tso,reserve_requirements=requirements,historical_rtbm_prices=history)
+    results=market.run(time_index=index,must_run_requirement_mw=[180.]*48,system_forecasts=tso,reserve_requirements=requirements,historical_rtbm_prices=history)
     results.save(args.output)
     readable = results.save_readable(args.output)
     print(f"Readable results: {readable['operator']}")

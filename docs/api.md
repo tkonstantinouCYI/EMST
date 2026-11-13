@@ -34,7 +34,7 @@ Each private settlement section contains `financial_position.intervals`, with
 signed cash by MTU for forward, DAM, ISP, RTBM, other settlement, UA-1 and UA-2.
 ISP includes reserve capacity and startup payments. RTBM includes instructed
 balancing and emergency energy payments. `settlement_cash_eur` excludes UA-1 and
-UA-2 so all seven columns add to `total_cash_eur`. These are stage attributions
+UA-2 so all eight columns add to `total_cash_eur`. These are stage attributions
 of ledger postings, and each posting is counted once. `totals` sums the MTU
 rows. Postings without an MTU are listed separately in `non_mtu_postings` and
 included in `daily_total_cash_eur`. Positive cash denotes participant receipts.
@@ -526,7 +526,7 @@ reports. A complete calendar month without meter reconciliation is required.
 
 `simulation_summary.days` contains all original daily reports.
 `simulation_summary.monthly_settlement.participants[participant_id]` contains
-`financial_position.totals` with all seven stage/uplift columns and their total,
+`financial_position.totals` with all eight stage/uplift columns and their total,
 computed from the closed monthly ledger. `daily_cashflows` and
 `daily_accrual_total_cash_eur` retain the original daily results;
 `monthly_adjustment_cash_eur` explains the difference between their sum and the
@@ -541,3 +541,9 @@ closure needs no `penalty_shares` argument: any penalty proceeds are credited
 through UA1. Legacy UA6/UA7 arguments are accepted only when zero and create no
 postings. Nonzero allocations to those accounts are rejected. Daily reports
 created by older code with UA5–UA7 charges must be rerun before monthly closure.
+
+
+Must-run procurement is optional: see [MW-based must-run auctions](must-run.md)
+for thermal participation, daily/monthly requirements, zero-price energy
+allocations, service cashflows and reporting. Financial positions add a
+`must_run_cash_eur` column for S24/S25/S26, separate from UA1 and UA2.

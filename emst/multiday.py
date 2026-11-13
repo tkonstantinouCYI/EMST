@@ -95,12 +95,13 @@ def load_checkpoint(path,market):
     return state,days
 
 
-def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None):
+def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,must_run_auction_frequency="monthly"):
     """Scenario maps ISO dates to forecasts/actuals by asset plus daily run kwargs.
 
     No next-day lookahead, monthly finalisation, or silent repetition of series.
     Original Market inputs are never modified. Resume must start the next day.
     """
+    if must_run_auction_frequency not in ('daily','monthly'):raise ValueError('Must-run auction frequency is daily or monthly')
     start,end=_day(start),_day(end)
     if not isinstance(start,date) or not isinstance(end,date) or end<start:
         raise ValueError('Expected an inclusive ascending date range')
@@ -108,7 +109,7 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None):
     config=_digest(_configuration(market))
     state=dict(schema=1,configuration_sha256=config,last_day=None,ending_states={},
         previous_system_observation=None,price_history=[],bootstrap={},results=[],
-        scope='daily_accrual',next_day_lookahead=False)
+        scope='daily_accrual',next_day_lookahead=False,must_run_auctions={},must_run_auction_frequency=must_run_auction_frequency)
     days={}
     if resume_from:
         if Path(resume_from).resolve().parent!=root:
@@ -123,12 +124,14 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None):
                 raise ValueError('A newer checkpoint is already committed in this directory')
     elif (root/'checkpoint.json').exists():
         raise FileExistsError('Checkpoint directory already contains a run; use resume_from')
+    if state.get('must_run_auction_frequency',must_run_auction_frequency)!=must_run_auction_frequency:
+        raise ValueError('Cannot change must-run auction frequency on resume')
     daily={_day(k):v for k,v in scenario.items()}
     dates=[start+timedelta(days=i) for i in range((end-start).days+1)]
     series_assets={a.id for a in market.assets.values() if a.technology in ('res','supplier')}
     allowed={'forecasts','actuals','forwards','reserve_requirements','price_forecast',
         'historical_rtbm_prices','price_ranges','system_forecasts','system_observations',
-        'previous_system_observation'}
+        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares'}
     for day in dates:
         if day not in daily:raise ValueError(f'Missing scenario for {day}')
         data=daily[day]
@@ -141,9 +144,39 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None):
             raise ValueError('A carried observation cannot be overridden')
         if not resume_from and (root/str(day)/'result.json').exists():
             raise FileExistsError(f'Daily result already exists for {day}; preserve it or use a new directory')
+    from .must_run import clear_auction,supplier_weights
+    from calendar import monthrange
+    state.setdefault('must_run_auctions',{})
+    if must_run_auction_frequency=='monthly':
+        months=sorted({d.strftime('%Y-%m') for d in dates if daily[d].get('must_run_requirement_mw') is not None})
+        for month in months:
+            if month in state['must_run_auctions']:continue
+            first=date.fromisoformat(month+'-01')
+            month_dates=[first.replace(day=d) for d in range(1,monthrange(first.year,first.month)[1]+1)]
+            if any(d not in daily or daily[d].get('must_run_requirement_mw') is None for d in month_dates):
+                raise ValueError('Monthly must-run auction requires requirements and forecasts for the complete month before clearing; use daily frequency for partial studies')
+            awards=clear_auction(market,{str(d):daily[d]['must_run_requirement_mw'] for d in month_dates},
+                frequency='monthly',auction_id='monthly:'+month)
+            from .series import mw_values
+            forecasts={a.id:[v for d in month_dates for v in mw_values(daily[d]['forecasts'][a.id],market.time_index(d),a.id+' monthly forecast')]
+                for a in market.assets.values() if a.technology=='supplier'}
+            supplied=[daily[d].get('must_run_supplier_shares') for d in month_dates]
+            if any(v!=supplied[0] for v in supplied):raise ValueError('Monthly must-run supplier shares must be constant throughout the month')
+            shares=supplier_weights(market,forecasts,supplied[0])
+            state['must_run_auctions'][month]=dict(awards=awards,supplier_shares=shares,
+                share_source='supplied' if supplied[0] is not None else 'monthly_forecast_consumption')
     working=deepcopy(market)
     for day in dates:
         data=deepcopy(daily[day]);kind=_kind(day)
+        working._must_run_award=None
+        procurement=state['must_run_auctions'].get(day.strftime('%Y-%m'))
+        if procurement is not None:
+            if data.get('must_run_requirement_mw') is None:raise ValueError('Cannot omit a precleared monthly must-run requirement')
+            working._must_run_award=deepcopy(procurement['awards'][str(day)])
+            working._must_run_award['supplier_share_source']=procurement['share_source']
+            if data.get('must_run_supplier_shares') is not None and data['must_run_supplier_shares']!=procurement['supplier_shares']:
+                raise ValueError('Cannot change precleared monthly supplier shares')
+            data['must_run_supplier_shares']=procurement['supplier_shares']
         for a in working.assets.values():
             if a.id in series_assets:
                 a.forecast=data['forecasts'][a.id];a.actual=data['actuals'][a.id]

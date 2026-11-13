@@ -120,3 +120,21 @@ loss-adjusted MWh per asset and zero-based half-hour. Supplier values are
 positive consumption. Storage uses signed injection. Apply profile allocation
 and loss adjustment before supplying corrections. The separate reconciliation
 ledger contains adjustments against the monthly baseline.
+
+
+## Must-run procurement
+
+Add `must_run_requirement_mw` (48 nonnegative MW values) to each daily scenario.
+`run_period` defaults to `must_run_auction_frequency="monthly"`: one procurement
+optimisation clears every MTU in each month before that month's daily execution.
+Supply the complete month's requirements and supplier forecasts, even when first
+executing only part of that month. The default fixed supplier shares use total
+forecast consumption for that month; `must_run_supplier_shares` can instead supply
+participant shares, identical for every day of the month.
+
+Monthly awards, fixed supplier shares and their source are saved in checkpoints.
+Resuming reuses these awards without re-clearing. Changed requirements or explicit
+shares are rejected. Use `must_run_auction_frequency="daily"` for independent daily
+auctions in partial studies. Physical dispatch still has no next-day lookahead;
+monthly procurement uses the explicitly supplied monthly planning forecasts.
+See [must-run details and limitations](must-run.md).

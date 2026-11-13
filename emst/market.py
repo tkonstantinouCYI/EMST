@@ -133,7 +133,12 @@ class Market:
                     ramp_mw_hour=1000.,minimum_up_minutes=60,minimum_down_minutes=60,
                     startup_cost=0.,no_load_cost_per_hour=0.,reserve_cost=2.,reserve_limit_mw=None,
                     startup_minutes=0,shutdown_minutes=0,strategy=None,strategy_parameters=None,
-                    energy_up_price=None,energy_down_price=None,reserve_prices=None,phase_profiles_mw=None):
+                    energy_up_price=None,energy_down_price=None,reserve_prices=None,phase_profiles_mw=None,
+                    must_run_participation=False,must_run_offer_eur_per_mtu=0.):
+        if type(must_run_participation) is not bool:raise ValueError('must_run_participation must be boolean')
+        if isinstance(must_run_offer_eur_per_mtu,bool) or not math.isfinite(must_run_offer_eur_per_mtu) or must_run_offer_eur_per_mtu<0:
+            raise ValueError('Must-run offer must be finite nonnegative EUR/unit/MTU')
+        if must_run_participation and minimum_mw<=0:raise ValueError('Must-run units require positive minimum MW')
         state=ThermalState(**initial_state) if isinstance(initial_state,dict) else initial_state
         if not isinstance(state,ThermalState):raise ValueError('Thermal initial_state is required')
         stage=canonical(state.stage)
@@ -161,7 +166,8 @@ class Market:
             reserve_limit_mw=capacity_mw if reserve_limit_mw is None else reserve_limit_mw,
             startup_minutes=startup_minutes,shutdown_minutes=shutdown_minutes,availability=1.,
             energy_up_price=energy_up_price,energy_down_price=energy_down_price,reserve_prices=quotes,
-            phase_profiles_mw=phase_map),state)
+            phase_profiles_mw=phase_map,must_run_participation=must_run_participation,
+            must_run_offer_eur_per_mtu=must_run_offer_eur_per_mtu),state)
 
     def add_storage(self,id,participant,*,power_mw,capacity_mwh,initial_state,efficiency_charge=.95,
                     efficiency_discharge=.95,ramp_mw_hour=10000.,reserve_cost=1.,degradation_cost=0.,
@@ -200,13 +206,14 @@ class Market:
         self.forwards.append(contract)
 
     def run(self,*,time_index,reserve_requirements=None,price_forecast=None,historical_rtbm_prices=None,price_ranges=False,accounting_cycles=False,
-            system_forecasts=None,system_observations=None,previous_system_observation=None):
+            system_forecasts=None,system_observations=None,previous_system_observation=None,
+            must_run_requirement_mw=None,must_run_supplier_shares=None):
         if accounting_cycles:raise NotImplementedError("The generic participant API currently runs daily settlement; full historical accounting remains available through emst.runner")
         from .market_engine import run_market
         return run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
-            system_forecasts,system_observations,previous_system_observation)
+            system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares)
 
-    def run_period(self,*,start,end,scenario,checkpoint_directory,resume_from=None):
+    def run_period(self,*,start,end,scenario,checkpoint_directory,resume_from=None,must_run_auction_frequency="monthly"):
         """Run inclusive consecutive dates; see docs/multi-day.md."""
         from .multiday import run_period
-        return run_period(self,start,end,scenario,checkpoint_directory,resume_from)
+        return run_period(self,start,end,scenario,checkpoint_directory,resume_from,must_run_auction_frequency)

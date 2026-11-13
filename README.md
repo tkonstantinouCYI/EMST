@@ -41,7 +41,7 @@ The daily example saves the original raw stage JSON files alongside:
 In the readable report, find each participant's cashflows at
 `simulation_summary.days[].market_stages.settlement.participants.<participant_id>.financial_position`.
 Its `intervals` contain cash per half-hour MTU for forward contracts, DAM, ISP,
-RTBM, other settlement, UA1 and UA2, plus the total. Positive amounts are
+RTBM, must-run service, other settlement, UA1 and UA2, plus the total. Positive amounts are
 receipts; negative amounts are payments. `totals` sums the MTUs, and
 `daily_total_cash_eur` also includes any separately listed non-MTU postings.
 UA1 and UA2 are separate columns and are counted once in the total.
@@ -50,6 +50,31 @@ settlement. Monthly penalty proceeds, if present, are credited through UA1;
 no penalty-share configuration is required.
 Only share the summaries or the intended participant's private report; the
 operator report contains everyone's private data.
+
+## Must-run auctions
+
+The daily and monthly synthetic examples use a **180 MW requirement per MTU**.
+Eligible thermal units bid EUR/unit/MTU. The auction minimises service cost and
+covers the requirement with the units' **minimum stable output**, not nameplate
+capacity. It runs before forward contracts and DAM. Awarded minimum energy is
+allocated to suppliers at zero direct energy price; both ISP runs and RTBM
+respect the awards. Pay-as-bid service payments and supplier recovery are
+separate from UA1 and UA2.
+
+Use `must_run_participation=True` and `must_run_offer_eur_per_mtu=...` when
+registering a thermal unit. Pass `must_run_requirement_mw=[180.0] * 48` to
+`Market.run`, or include it in every daily scenario for `run_period`.
+Omit the requirement to disable procurement. Monthly runs default to one
+auction per month and require the complete month's requirement and supplier
+forecast series before clearing. Partial studies can select
+`must_run_auction_frequency="daily"`.
+
+Readable JSON includes `market_stages.must_run_auction` (shared totals and
+private awards, supplier allocations and cashflows), and
+`financial_position.intervals[].must_run_cash_eur`. Monthly financial totals
+include these payments and charges. See [configuration, settlement and
+limitations](docs/must-run.md). This is a simplified MW-based research model;
+it does not reproduce the official inertia-based procurement requirements.
 
 ## Run a historical Cyprus day
 
@@ -98,7 +123,7 @@ folder for each fresh run.
 The full month is also saved in `month-results/readable_results.json`, containing
 all 30 days and monthly participant totals at
 `simulation_summary.monthly_settlement.participants.<participant_id>.financial_position`.
-The seven cashflow columns include UA1 and UA2. Monthly totals use the closed
+The eight cashflow columns include must-run service, UA1 and UA2. Monthly totals use the closed
 monthly ledger; `daily_accrual_total_cash_eur` and `monthly_adjustment_cash_eur`
 explain any difference from the daily reports, including month-only charges or
 credits. Combined shared and participant reports are saved alongside it in

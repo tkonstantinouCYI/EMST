@@ -10,7 +10,7 @@ from .relaxation import build as build_slacks,quantities as slack_quantities,use
 from .phases import build as build_phases,bind_average_power,row_phase,canonical,PHASES
 
 
-def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None):
+def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None):
     thermal=[a for a in assets if a.technology=="thermal"]
     storage=[a for a in assets if a.technology=="storage"]
     renewables=[a for a in assets if a.technology=='res']
@@ -41,6 +41,11 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 data=phase_data[a.id]
                 on[k]=data['on'][j];start[k]=data['start'][j];stop[k]=data['stop'][j]
                 dispatch_flag=data['flags']['dispatch',j]
+            required=(mandatory_on or {}).get(a.id,[0]*len(intervals))[j]
+            if required:
+                if rtbm and phase!='dispatch':raise ValueError('Must-run award conflicts with RTBM dispatch phase')
+                if not rtbm:m+=dispatch_flag==1
+                m+=p[k]>=v['minimum_mw']
             m+=p[k]>=0;m+=p[k]<=v['capacity_mw']*on[k]
             prev_p=initial['power_mw'] if j==0 else (end[a.id,j-1] if rtbm else p[a.id,j-1])
             minimum=v['minimum_mw']*dispatch_flag

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from .settlement import CATALOGUE
 
 
-STAGES = ('forward_market', 'day_ahead_market', 'isp', 'rtbm', 'settlement')
+STAGES = ('must_run_auction', 'forward_market', 'day_ahead_market', 'isp', 'rtbm', 'settlement')
 
 
 def _interval(at, hours, period):
@@ -50,9 +50,10 @@ def _cash_lines(entries, participant):
 
 
 CASH_FIELDS = ('forward_market_cash_eur', 'day_ahead_market_cash_eur', 'isp_cash_eur',
-               'rtbm_cash_eur', 'settlement_cash_eur', 'ua1_cash_eur', 'ua2_cash_eur')
+               'rtbm_cash_eur', 'settlement_cash_eur', 'ua1_cash_eur', 'ua2_cash_eur', 'must_run_cash_eur')
 CASH_ALLOCATION = {'S01': CASH_FIELDS[0], 'S02': CASH_FIELDS[1],
                    'S16': CASH_FIELDS[5], 'S17': CASH_FIELDS[6]}
+CASH_ALLOCATION.update({code: 'must_run_cash_eur' for code in ('S24','S25','S26')})
 CASH_ALLOCATION.update({code: CASH_FIELDS[2] for code in ('S05', 'S06', 'S07', 'S08', 'S13')})
 CASH_ALLOCATION.update({code: CASH_FIELDS[3] for code in ('S03', 'S10', 'S12')})
 
@@ -100,6 +101,15 @@ def _asset_interval(row, asset, timestamp):
 def _shared(result):
     times = result.inputs['time_index']
     stages = {name: dict(summary={}) for name in STAGES}
+    auction=result.inputs.get('must_run')
+    stages['must_run_auction']['summary']=dict(enabled=auction is not None)
+    if auction:
+        stages['must_run_auction']['summary'].update(auction_id=auction['auction_id'],frequency=auction['frequency'],model=auction['model'],
+            total_service_cost_eur=sum(r['service_cost_eur'] for r in auction['intervals']),
+            total_inherent_energy_mwh=sum(r['awarded_mw']*.5 for r in auction['intervals']),
+            intervals=[dict(_interval(times[r['period_index']],.5,r['period_index']),
+                requirement_mw=r['requirement_mw'],awarded_mw=r['awarded_mw'],
+                inherent_energy_mwh=r['awarded_mw']*.5,service_cost_eur=r['service_cost_eur']) for r in auction['intervals']])
     forward = [e for e in result.ledger if e['component'] == 'S01']
     stages['forward_market']['summary'] = dict(
         contracted_energy_mwh=float(sum((Decimal(e['quantity']) for e in forward), Decimal(0))),
@@ -188,6 +198,16 @@ def _participant(result, participant):
             energy_mwh=float(entry['quantity']), price_eur_mwh=float(entry['price']),
             cash_eur=str(_cash(entry, participant))))
     stages['forward_market'] = dict(intervals=contracts)
+    auction=result.inputs.get('must_run')
+    stages['must_run_auction']=dict(intervals=[])
+    if auction:
+        stages['must_run_auction'].update(supplier_share=auction['supplier_shares'].get(participant),
+            supplier_share_source=auction['supplier_share_source'])
+        stages['must_run_auction']['intervals']=[dict(_interval(times[r['period_index']],.5,r['period_index']),
+            awards=[deepcopy(a) for a in r['awards'] if a['participant']==participant],
+            supplier_allocations=[deepcopy(a) for a in r['supplier_allocations'] if a['participant']==participant])
+            for r in auction['intervals']]
+    stages['forward_market']['must_run_zero_price_allocations']=(stages['must_run_auction']['intervals'] if auction else [])
     orders = []
     for order in result.orders:
         if order['participant'] != participant:
@@ -246,8 +266,8 @@ def _participant(result, participant):
                 actual_consumption_mwh=actual, isp_run_id=row['isp_run']))
     stages['rtbm'] = dict(intervals=records)
     financials = {}
-    for stage, codes in (('forward_market', {'S01'}), ('day_ahead_market', {'S02'}),
-                         ('settlement', set(CATALOGUE) - {'S01', 'S02'})):
+    for stage, codes in (('must_run_auction', {'S24','S25','S26'}), ('forward_market', {'S01'}), ('day_ahead_market', {'S02'}),
+                         ('settlement', set(CATALOGUE) - {'S01', 'S02','S24','S25','S26'})):
         entries = [e for e in result.ledger if e['component'] in codes]
         financials[stage] = _cash_totals(entries, participant)
         stages[stage]['cash_by_component'] = financials[stage]
@@ -267,7 +287,7 @@ def _participant(result, participant):
     stages['settlement'].update(meters=meters,
         financial_position=_financial_position(result, participant),
         total_participant_cash_eur=str(sum((Decimal(stages[s]['cash_eur'])
-            for s in ('forward_market', 'day_ahead_market', 'settlement')), Decimal(0))),
+            for s in ('must_run_auction','forward_market', 'day_ahead_market', 'settlement')), Decimal(0))),
         ending_states={a: deepcopy(s) for a, s in result.ending_states.items() if a in assets})
     return stages
 
