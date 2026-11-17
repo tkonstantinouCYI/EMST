@@ -51,7 +51,7 @@ def _month_ledger(days, month, parameters, corrections, penalty_rates, assessmen
             rows = meters[period.period]
             changed = any((day, period.period, r['asset']) in corrections for r in rows)
             native, deviations, parties, tariff_rows, updates = {}, {}, {}, [], {}
-            batch = result.rtbm[period.period * 6:period.period * 6 + 6]
+            batch = [r for r in result.rtbm if r['period']==period.period]
             for row in rows:
                 asset = assets[row['asset']]
                 technology, config = asset['technology'], asset['parameters']
@@ -148,6 +148,8 @@ def settle_month(results, month, *, penalty_shares=None, reserve_cost_eur=0, rec
     days = {day: results.days[day] for day in expected}
     if any(not r.audit['passed'] or r.manifest['day'] != day for day, r in days.items()):
         raise ValueError('Monthly closure requires audited results for the requested dates')
+    resolutions={r.manifest.get('rtbm_interval_minutes',5) for r in days.values()}
+    if len(resolutions)!=1:raise ValueError('Monthly closure requires a consistent RTBM resolution')
     corrections = {}
     for (day, mtu, asset), value in (meter_corrections or {}).items():
         if day not in days or not any(r['period'] == mtu and r['asset'] == asset for r in days[day].meters):
@@ -170,7 +172,9 @@ def settle_month(results, month, *, penalty_shares=None, reserve_cost_eur=0, rec
     rates = systematic_penalty_rates or {}
     original, inputs, accruals, assessments = _month_ledger(days, month, parameters, {}, rates)
     holidays = frozenset(date.fromisoformat(h) if isinstance(h, str) else h for h in holidays)
-    output = dict(monthly=statement(original, 'monthly', month, expected, list(days)),
+    output = dict(rtbm_interval_minutes=next(iter(resolutions)),
+                  settlement_resolution='30min_research_approximation' if 30 in resolutions else 'native_5min_based',
+                  monthly=statement(original, 'monthly', month, expected, list(days)),
                   calendar=monthly_calendar(start.year, start.month, holidays), ledger=original.export(),
                   replaced_daily_accruals=accruals, systematic_penalties=assessments,
                   excluded_uplifts=['UA-3', 'UA-4', 'UA-5', 'UA-6', 'UA-7'], reconciliation=None)

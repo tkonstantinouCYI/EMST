@@ -9,6 +9,7 @@ from .calendar import day_intervals,CYPRUS
 from .series import timestamps,mw_values
 from .relaxation import used as slack_used
 from .system import reserve_series,system_series,observation_update
+from .resolution import validate_minutes,aggregate_six,history_sets
 from .model import Order,PRODUCTS
 from .phases import canonical,boundary_state,check_rows
 from .commercial import clear_dam
@@ -66,11 +67,14 @@ def _advance(assets,state,rows,minutes):
 
 def run_market(market,time_index,reserve_requirements,price_forecast,historical_rtbm_prices=None,price_ranges=False,
                system_forecasts=None,system_observations=None,previous_system_observation=None,
-               must_run_requirement_mw=None,must_run_supplier_shares=None,storage_terminal_soc_mwh=None):
+               must_run_requirement_mw=None,must_run_supplier_shares=None,storage_terminal_soc_mwh=None,rtbm_interval_minutes=5):
     from .market import MarketResults
     index=timestamps(time_index)
     if not index:raise ValueError('Empty market time index')
-    day=index[0].astimezone(CYPRUS).date();periods=day_intervals(day,30,mode='verified_rules_only');rtus=day_intervals(day,5,mode='verified_rules_only')
+    validate_minutes(rtbm_interval_minutes)
+    per_mtu=30//rtbm_interval_minutes;rate=60/rtbm_interval_minutes
+    day=index[0].astimezone(CYPRUS).date();periods=day_intervals(day,30,mode='verified_rules_only')
+    fine_rtus=day_intervals(day,5,mode='verified_rules_only');rtus=day_intervals(day,rtbm_interval_minutes,mode='verified_rules_only')
     if index!=[p.start for p in periods] or len(index)!=48:raise ValueError('Provide a complete normal-day half-hour time index; official DST handling is not yet available in the public API')
     parameters=market.settlement_parameters
     if not all(k in parameters for k in ('id','tariffs')):raise ValueError('Incomplete daily settlement parameter bundle')
@@ -80,17 +84,19 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     if not assets:raise ValueError('No registered assets')
     for p in participants.values():
         if p.brp is not None and p.brp not in participants:raise ValueError(f'Unknown BRP participant {p.brp}')
-    forecast={};actual={}
+    forecast={};actual_fine={};actual_input_minutes={}
     for a in assets:
         if a.technology not in ('supplier','res'):continue
         forecast[a.id]=mw_values(a.forecast,index,a.id+' forecast')
         raw=a.actual
         if raw is None:raise ValueError('Actual RES generation and consumption are required')
-        actual_index=[t.start for t in rtus] if len(raw)==len(rtus) else index
+        actual_input_minutes[a.id]=5 if len(raw)==len(fine_rtus) else 30
+        actual_index=[t.start for t in fine_rtus] if len(raw)==len(fine_rtus) else index
         values=mw_values(raw,actual_index,a.id+' actual')
-        actual[a.id]=values if len(values)==len(rtus) else [v for v in values for _ in range(6)]
+        actual_fine[a.id]=values if len(values)==len(fine_rtus) else [v for v in values for _ in range(6)]
         if a.technology=='res' and a.parameters['capacity_mw'] is not None:
-            if max(forecast[a.id]+actual[a.id])>a.parameters['capacity_mw']+1e-6:raise ValueError('RES time series exceeds registered capacity')
+            if max(forecast[a.id]+actual_fine[a.id])>a.parameters['capacity_mw']+1e-6:raise ValueError('RES time series exceeds registered capacity')
+    actual=actual_fine if rtbm_interval_minutes==5 else {aid:aggregate_six(v) for aid,v in actual_fine.items()}
     if not any(a.technology=='supplier' for a in assets):raise ValueError('At least one demand portfolio is required')
     if storage_terminal_soc_mwh is not None:
         if not isinstance(storage_terminal_soc_mwh,dict):raise ValueError('storage_terminal_soc_mwh must map storage asset IDs to MWh')
@@ -182,12 +188,14 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     load=[sum(forecast[a.id][t] for a in assets if a.technology=='supplier') for t in range(48)]
     renewable=[sum(forecast[a.id][t] for a in assets if a.technology=='res') for t in range(48)]
     participant_load=load;participant_res=renewable
-    tso_mtu,tso_rtu,forecast_source=system_series(system_forecasts,index,[t.start for t in rtus],
+    tso_mtu,tso_fine,forecast_source=system_series(system_forecasts,index,[t.start for t in fine_rtus],
         name='system_forecasts',fallback={'demand':participant_load,'res':participant_res})
-    observed_mtu,observed_rtu,observation_source=system_series(system_observations,index,[t.start for t in rtus],
+    observed_mtu,observed_fine,observation_source=system_series(system_observations,index,[t.start for t in fine_rtus],
         name='system_observations',fallback={
-            'demand':[sum(actual[a.id][i] for a in assets if a.technology=='supplier') for i in range(288)],
-            'res':[sum(actual[a.id][i] for a in assets if a.technology=='res') for i in range(288)]})
+            'demand':[sum(actual_fine[a.id][i] for a in assets if a.technology=='supplier') for i in range(288)],
+            'res':[sum(actual_fine[a.id][i] for a in assets if a.technology=='res') for i in range(288)]})
+    tso_rtu=tso_fine if rtbm_interval_minutes==5 else deepcopy(tso_mtu)
+    observed_rtu=observed_fine if rtbm_interval_minutes==5 else deepcopy(observed_mtu)
     load=tso_mtu['demand'];renewable=tso_mtu['res']
     if previous_system_observation is not None:
         observation_update(load[0],renewable[0],previous=previous_system_observation)
@@ -201,22 +209,28 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     runs=[first];effective={r['period']:r for r in first['rows']};active='ISP_initial';pending=None;rtbm=[]
     def clear_one(interval,current,rows,previous=None,measurement_index=None,projection=False):
         t=interval.period
-        position=t*6+(interval.local.minute%30)//5
-        horizon=rtus[position:(t+1)*6];n=len(horizon)
+        position=t*per_mtu+(interval.local.minute%30)//rtbm_interval_minutes
+        horizon=rtus[position:(t+1)*per_mtu];n=len(horizon)
         predictions=[observation_update(tso_rtu['demand'][position+j],tso_rtu['res'][position+j],previous=previous) for j in range(n)]
+        current_known=rtbm_interval_minutes==30 and not projection
+        if current_known:
+            # Current half-hour inputs are assumed known at gate opening.
+            demand_now=sum(actual[a.id][position] for a in assets if a.technology=='supplier')
+            res_now=sum(actual[a.id][position] for a in assets if a.technology=='res')
+            predictions=[observation_update(demand_now,res_now)]
         result=dispatch(assets,current,horizon,[x['demand_prediction_mw'] for x in predictions],
             [x['res_prediction_mw'] for x in predictions],
-            {a.id:[schedules[a.id][t]/6]*n for a in assets},
-            {},rules,projection=projection,storage_terminal_soc=storage_terminal_soc_mwh,terminal_time=periods[-1].end,
-            mandatory_on={a.id:[mandatory[a.id][t]]*n for a in assets if a.technology=='thermal'},commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=rows['assets'],rtbm=True,res_forecasts={a.id:[forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
-        result['system_prediction']=dict(predictions[0],measurement_index=measurement_index)
+            {a.id:[schedules[a.id][t]/per_mtu]*n for a in assets},
+            {},rules,projection=projection,immediate_ramping=rtbm_interval_minutes==30,storage_terminal_soc=storage_terminal_soc_mwh,terminal_time=periods[-1].end,
+            mandatory_on={a.id:[mandatory[a.id][t]]*n for a in assets if a.technology=='thermal'},commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=rows['assets'],rtbm=True,res_forecasts={a.id:[actual[a.id][position] if current_known else forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
+        result['system_prediction']=dict(predictions[0],measurement_index=position if current_known else measurement_index,input_basis='current_interval_inputs' if current_known else 'forecast_with_previous_observation')
         return result
     previous=deepcopy(previous_system_observation)
     for i,interval in enumerate(rtus):
         if interval.local.hour==11 and interval.local.minute==0:
             projected=deepcopy(state);trace=[]
-            for future in rtus[i:i+12]:
-                r=clear_one(future,projected,effective[future.period],previous,i-1 if i else None,projection=True);_advance(controllable,projected,r['assets'],5)
+            for future in rtus[i:i+60//rtbm_interval_minutes]:
+                r=clear_one(future,projected,effective[future.period],previous,i-1 if i else None,projection=True);_advance(controllable,projected,r['assets'],future.minutes)
                 trace.append(deepcopy(projected))
             second=plan(24,projected);second.update(id='ISP_1100',cutoff=interval.start.isoformat(),first_period=24,
                 effective_at=periods[24].start.isoformat(),observed_state=deepcopy(state),forecast_noon_state=deepcopy(projected),forecast_bridge=trace)
@@ -224,16 +238,16 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         if pending and interval.period==24:
             effective.update({r['period']:r for r in pending['rows']});active='ISP_1100';pending=None
         r=clear_one(interval,state,effective[interval.period],previous,i-1 if i else None);r.update(isp_run=active,rtu=interval.id)
-        _advance(controllable,state,r['assets'],5)
+        _advance(controllable,state,r['assets'],interval.minutes)
         actual_load=sum(actual[a.id][i] for a in assets if a.technology=='supplier')
         actual_res=sum(actual[a.id][i] for a in assets if a.technology=='res')
         r['RES_delivery_mwh']={};r['RES_delivered_down_mwh']={};r['RES_available_mwh']={}
         r['RES_commercial_curtailment_mwh']={};r['RES_instructions']=[]
         for a in assets:
             if a.technology!='res':continue
-            instruction=r['assets'][a.id]['down_mwh'];meter=actual[a.id][i]/12
+            instruction=r['assets'][a.id]['down_mwh'];meter=actual[a.id][i]/rate
             if a.parameters['actual_generation_kind']=='available':
-                available=meter;scheduled=min(available,schedules[a.id][interval.period]/6)
+                available=meter;scheduled=min(available,schedules[a.id][interval.period]/per_mtu)
                 commercial_curt=available-scheduled;delivered_down=min(instruction,scheduled)
                 meter=scheduled-delivered_down
             else:
@@ -245,10 +259,10 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                 r['RES_instructions'].append(dict(asset=a.id,participant=a.participant,direction='down',
                     energy_mwh=instruction,delivered_mwh=delivered_down,undelivered_mwh=max(0,instruction-delivered_down),
                     price_forming=True,reason='RES_down_offer'))
-        delivered_res=sum(r['RES_delivery_mwh'].values())*12
+        delivered_res=sum(r['RES_delivery_mwh'].values())*rate
         total_control=sum(r['assets'][a.id]['power_mw'] for a in controllable)
-        r.update(actual_demand_mwh=actual_load/12,actual_RES_mwh=delivered_res/12,
-            physical_imbalance_mwh=(actual_load-delivered_res-total_control)/12)
+        r.update(actual_demand_mwh=actual_load/rate,actual_RES_mwh=delivered_res/rate,
+            physical_imbalance_mwh=(actual_load-delivered_res-total_control)/rate)
         for a in assets:
             if a.id not in r['assets']:continue
             r['assets'][a.id]['actual_mwh']=r['RES_delivery_mwh'][a.id] if a.technology=='res' else r['assets'][a.id]['energy_mwh']
@@ -256,12 +270,12 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         # treating instructed curtailment as an unexplained weather error.
         observed_meter=observed_rtu['res'][i] if system_observations is not None else delivered_res
         observed_rtu['res'][i]=observed_meter
-        control_mw=12*(sum(r['RES_delivered_down_mwh'].values())+sum(r['RES_commercial_curtailment_mwh'].values()))
+        control_mw=rate*(sum(r['RES_delivered_down_mwh'].values())+sum(r['RES_commercial_curtailment_mwh'].values()))
         r['observed_system_res_metered_mw']=observed_meter
         r['system_observation']=dict(demand_mw=observed_rtu['demand'][i],res_mw=observed_meter+control_mw,
             forecast_demand_mw=tso_rtu['demand'][i],forecast_res_mw=tso_rtu['res'][i])
         r['system_observation_available_at']=interval.end.isoformat()
-        r['observed_system_imbalance_mwh']=(observed_rtu['demand'][i]-observed_meter-total_control)/12
+        r['observed_system_imbalance_mwh']=(observed_rtu['demand'][i]-observed_meter-total_control)/rate
         previous=deepcopy(r['system_observation'])
         rtbm.append(r)
     ledger=Ledger();meters=[]
@@ -273,14 +287,14 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         ledger.post('DAM:'+o.id,'S02',f'participant:{o.participant}:DAM','A-A',dam['accepted_mwh'][o.id]*(1 if o.side=='sell' else -1),dam['prices_eur_mwh'][o.period],periods[o.period].id,'13.3',o.id)
     residual_checks=[]
     for t,period in enumerate(periods):
-        batch=rtbm[t*6:t*6+6]
+        batch=rtbm[t*per_mtu:(t+1)*per_mtu]
         pricing_rows=[dict(price_eur_mwh=r['price_eur_mwh'],rows=[dict(x,price_forming=True,reason=x.get('reason','ordinary_market')) for x in r['assets'].values()]) for r in batch]
         weights=[abs(sum(x['up_mwh']-x['down_mwh'] for x in r['rows'] if x['price_forming'])) for r in pricing_rows]
         history=(historical_rtbm_prices.get(t) if isinstance(historical_rtbm_prices,dict) else historical_rtbm_prices[t]) if historical_rtbm_prices is not None else None
         scarcity_weights=[r['slack']['energy_shortage_mwh']+r['slack']['energy_surplus_mwh'] for r in batch]
-        if history is None and sum(weights)<=1e-7 and sum(scarcity_weights)<=1e-7:raise ValueError(f'MTU {t}: no price-forming activation; supply three corresponding days of historical_rtbm_prices (6 RTU prices per day)')
-        history=history if history is not None else [[0.]*6 for _ in range(3)]
-        pricing=period_price(pricing_rows,history)
+        if history is None and sum(weights)<=1e-7 and sum(scarcity_weights)<=1e-7:raise ValueError(f'MTU {t}: no price-forming activation; supply three corresponding days of historical_rtbm_prices (corresponding RTU prices per day)')
+        history=history_sets(history,per_mtu) if history is not None else [[0.]*per_mtu for _ in range(3)]
+        pricing=period_price(pricing_rows,history,history_interval_count=per_mtu)
         if sum(weights)<=1e-7 and sum(scarcity_weights)>1e-7:
             pricing['price_eur_mwh']=sum(w*r['price_eur_mwh'] for w,r in zip(scarcity_weights,batch))/sum(scarcity_weights)
             pricing['price_source']='slack_penalty_when_no_price_forming_activation'
@@ -301,7 +315,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                 bridge=res_bridge(q,down,delivery,rules['settlement'],a.parameters.get('grant_res',False))
                 inst=bridge['INSTQ'];uninst=bridge['UNINSTQ']
             else:
-                delivery=sum(actual[a.id][t*6:(t+1)*6])/12
+                delivery=sum(actual[a.id][t*per_mtu:(t+1)*per_mtu])/rate
                 b=offtake_bridge(q,delivery,tolerance=rules['settlement']['small_supplier_tolerance'] if a.parameters['small_supplier'] else None)
                 inst=0.;uninst=b['UNINSTQ'];native[a.participant]=native.get(a.participant,0)+delivery
                 tariff_rows.append(dict(id=f'{a.id}:{t}',participant=a.participant,period=period.id,energy_mwh=delivery,hours=.5,voltage=a.parameters['voltage'],purpose='consumption'))
@@ -336,15 +350,15 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         'ISP_fixed_LP_optimum':all(abs(run['milp_objective_eur']-run['fixed_lp_objective_eur'])<1e-3 for run in runs),
         '48_DAM_balances':all(abs(sum((1 if o.side=='sell' else -1)*dam['accepted_mwh'][o.id] for o in orders if o.period==t))<1e-5 for t in range(48)),
         'forecast_RTBM_balance':all(abs(sum(r['assets'][a.id]['power_mw'] for a in controllable)+r['res_dispatch_reference_mw']-r['res_curtailment_mw']+(r['slack']['energy_shortage_mwh']-r['slack']['energy_surplus_mwh'])/r['hours']-r['system_prediction']['demand_prediction_mw'])<1e-5 for r in rtbm),
-        'observation_causality':all(r['system_prediction']['measurement_index']==(i-1 if i else None) for i,r in enumerate(rtbm)),
-        'observation_prediction_formula':all(abs(r['system_prediction']['demand_prediction_mw']-max(0,tso_rtu['demand'][i]+r['system_prediction']['demand_error_mw']))<1e-7 and abs(r['system_prediction']['res_prediction_mw']-max(0,tso_rtu['res'][i]+r['system_prediction']['res_error_mw']))<1e-7 for i,r in enumerate(rtbm)),
+        'observation_causality':all(r['system_prediction']['measurement_index']==(i if rtbm_interval_minutes==30 else i-1 if i else None) for i,r in enumerate(rtbm)),
+        'observation_prediction_formula':all(abs(r['system_prediction']['demand_prediction_mw']-max(0,r['system_prediction']['baseline_demand_mw']+r['system_prediction']['demand_error_mw']))<1e-7 and abs(r['system_prediction']['res_prediction_mw']-max(0,r['system_prediction']['baseline_res_mw']+r['system_prediction']['res_error_mw']))<1e-7 for i,r in enumerate(rtbm)),
         'dispatch_equals_actual':all(r['assets'][a.id]['actual_mwh']==r['assets'][a.id]['energy_mwh'] for r in rtbm for a in controllable),
-        'initial_ISP_through_1155':all(r['isp_run']=='ISP_initial' for r in rtbm[:144]),
-        'new_ISP_from_noon':all(r['isp_run']=='ISP_1100' for r in rtbm[144:]),
+        ('initial_ISP_through_1155' if rtbm_interval_minutes==5 else 'initial_ISP_before_noon'):all(r['isp_run']=='ISP_initial' for r in rtbm[:12*60//rtbm_interval_minutes]),
+        'new_ISP_from_noon':all(r['isp_run']=='ISP_1100' for r in rtbm[12*60//rtbm_interval_minutes:]),
         'double_entry':abs(sum(ledger.balances().values(),D(0)))<D('1e-15'),
         'no_capacity_for_ineligible_storage':all(not any(r['assets'][a.id]['reserve_mw'].values()) for r in rtbm for a in controllable if a.technology=='storage' and not rules['storage']['participation_balancing_capacity']),
         'storage_SOC_bounds':all(-1e-7<=r['assets'][a.id]['soc_mwh']<=a.parameters['capacity_mwh']+1e-7 for r in rtbm for a in controllable if a.technology=='storage'),
-        'no_storage_energy_activation_when_disabled':all(abs(r['assets'][a.id]['energy_mwh']-schedules[a.id][r['period']]/6)<1e-6 for r in rtbm for a in controllable if a.technology=='storage' and not rules['storage']['participation_balancing_energy']),
+        'no_storage_energy_activation_when_disabled':all(abs(r['assets'][a.id]['energy_mwh']-schedules[a.id][r['period']]/per_mtu)<1e-6 for r in rtbm for a in controllable if a.technology=='storage' and not rules['storage']['participation_balancing_energy']),
     }
     if must_run:
         checks['must_run_requirement_covered']=all(r['awarded_mw']+1e-6>=r['requirement_mw'] for r in must_run['intervals'])
@@ -352,6 +366,19 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         checks['must_run_ISP_dispatch']=all(row['assets'][a.id]['phase']=='dispatch' and row['assets'][a.id]['power_mw']+1e-5>=a.parameters['minimum_mw'] for run in runs for row in run['rows'] for a in controllable if a.technology=='thermal' and mandatory[a.id][row['period']])
         checks['must_run_RTBM_dispatch']=all(row['assets'][a.id]['phase']=='dispatch' and row['assets'][a.id]['power_mw']+1e-5>=a.parameters['minimum_mw'] for row in rtbm for a in controllable if a.technology=='thermal' and mandatory[a.id][row['period']])
         checks['must_run_service_recovery']=all(abs(sum((D(e['cash_eur']) for e in ledger.export() if e['component'] in ('S24','S26') and e['period']==p.id),D(0)))<D('1e-20') for p in periods)
+    storage_assets=[a for a in controllable if a.technology=='storage']
+    checks['storage_ISP_activation_exclusivity']=all(min(row['assets'][a.id]['up_mwh'],row['assets'][a.id]['down_mwh'])<=1e-7
+        for run in runs for row in run['rows'] for a in storage_assets)
+    checks['storage_RTBM_activation_exclusivity']=all(min(row['assets'][a.id]['up_mwh'],row['assets'][a.id]['down_mwh'])<=1e-7
+        for row in rtbm for a in storage_assets)
+    checks['storage_ISP_charging_exclusivity']=all(min(row['assets'][a.id]['charge_mwh'],row['assets'][a.id]['discharge_mwh'])<=1e-7
+        for run in runs for row in run['rows'] for a in storage_assets)
+    checks['storage_RTBM_charging_exclusivity']=all(min(row['assets'][a.id]['charge_mwh'],row['assets'][a.id]['discharge_mwh'])<=1e-7
+        for row in rtbm for a in storage_assets)
+    checks['storage_schedule_activation_energy_bridge']=(all(abs(row['assets'][a.id]['energy_mwh']-run['commercial_mwh'][a.id][j]-row['assets'][a.id]['up_mwh']+row['assets'][a.id]['down_mwh'])<1e-6
+        for run in runs for j,row in enumerate(run['rows']) for a in storage_assets) and
+        all(abs(row['assets'][a.id]['energy_mwh']-schedules[a.id][row['period']]/per_mtu-row['assets'][a.id]['up_mwh']+row['assets'][a.id]['down_mwh'])<1e-6
+        for row in rtbm for a in storage_assets))
     checks['thermal_four_phase_constraints']=True
     checks['thermal_power_from_market_schedule_and_energy']=True
     for run in runs:
@@ -373,20 +400,22 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     checks['RES_down_only_no_capacity']=all(abs(r['assets'][a.id]['up_mwh'])<1e-8 and all(abs(v)<1e-8 for v in r['assets'][a.id]['reserve_mw'].values()) for r in rtbm for a in renewable_assets)
     checks['RES_reference_minus_instruction']=all(abs(r['assets'][a.id]['energy_mwh']-r['assets'][a.id]['reference_energy_mwh']+r['assets'][a.id]['down_mwh'])<1e-6 for r in rtbm for a in renewable_assets)
     checks['RES_available_energy_conserved']=all(abs(r['RES_available_mwh'][a.id]-r['RES_delivery_mwh'][a.id]-r['RES_commercial_curtailment_mwh'][a.id]-r['RES_delivered_down_mwh'][a.id])<1e-6 for r in rtbm for a in renewable_assets if a.parameters['actual_generation_kind']=='available')
-    checks['RES_instructed_settlement_quantity']=all(abs(m['INSTQ_mwh']-res_bridge(m['MSQ_mwh'],sum(r['RES_delivered_down_mwh'][m['asset']] for r in rtbm[m['period']*6:(m['period']+1)*6]),m['actual_mwh'],rules['settlement'],market.assets[m['asset']].parameters.get('grant_res',False))['INSTQ'])<1e-6 for m in meters if m['asset'] in {a.id for a in renewable_assets})
+    checks['RES_instructed_settlement_quantity']=all(abs(m['INSTQ_mwh']-res_bridge(m['MSQ_mwh'],sum(r['RES_delivered_down_mwh'][m['asset']] for r in rtbm[m['period']*per_mtu:(m['period']+1)*per_mtu]),m['actual_mwh'],rules['settlement'],market.assets[m['asset']].parameters.get('grant_res',False))['INSTQ'])<1e-6 for m in meters if m['asset'] in {a.id for a in renewable_assets})
     checks['slack_nonnegative']=all(s['energy_shortage_mwh']>=-1e-7 and s['energy_surplus_mwh']>=-1e-7 and min(s['reserve_shortage_mw'].values(),default=0)>=-1e-7 for s in [r['slack'] for r in rtbm]+[s for run in runs for s in run['slack_by_period']])
     checks['latest_observed_error']=True
     for i,r in enumerate(rtbm):
         previous=previous_system_observation if i==0 else rtbm[i-1]['system_observation']
-        expected=observation_update(tso_rtu['demand'][i],tso_rtu['res'][i],previous=previous)
+        expected=(observation_update(sum(actual[a.id][i] for a in assets if a.technology=='supplier'),sum(actual[a.id][i] for a in assets if a.technology=='res')) if rtbm_interval_minutes==30 else observation_update(tso_rtu['demand'][i],tso_rtu['res'][i],previous=previous))
         checks['latest_observed_error'] &= all(abs(r['system_prediction'][k]-expected[k])<1e-7 for k in ('demand_prediction_mw','res_prediction_mw','demand_error_mw','res_error_mw'))
         if i:checks['latest_observed_error'] &= datetime.fromisoformat(rtbm[i-1]['system_observation_available_at'])<=datetime.fromisoformat(r['at'])
     prior={a.id:deepcopy(asdict(a.initial_state)) for a in controllable}
+    if rtbm_interval_minutes==30:
+        checks['immediate_RTBM_power']=all(abs(x['end_mw']-x['power_mw'])<1e-6 and all(abs(v-x['power_mw'])<1e-6 for v in x['nodes_mw']) for r in rtbm for a in controllable if a.technology=='thermal' for x in [r['assets'][a.id]])
     checks['intertemporal_power_ramps']=True;checks['storage_SOC_bridge']=True;checks['physical_power_limits']=True;checks['thermal_energy_integrals']=True
     for r in rtbm:
         for a in controllable:
             x=r['assets'][a.id];p=a.parameters;previous=prior[a.id]
-            checks['intertemporal_power_ramps'] &= (all(abs(y-z)<=p['ramp_mw_hour']*x['trajectory_step_hours']+1e-5 for z,y in zip(x['nodes_mw'],x['nodes_mw'][1:])) and abs(x['nodes_mw'][0]-previous['power_mw'])<1e-5 if a.technology=='thermal' else abs(x['power_mw']-previous['power_mw'])<=p['ramp_mw_hour']*r['hours']+1e-5)
+            checks['intertemporal_power_ramps'] &= rtbm_interval_minutes==30 or (all(abs(y-z)<=p['ramp_mw_hour']*x['trajectory_step_hours']+1e-5 for z,y in zip(x['nodes_mw'],x['nodes_mw'][1:])) and abs(x['nodes_mw'][0]-previous['power_mw'])<1e-5 if a.technology=='thermal' else abs(x['power_mw']-previous['power_mw'])<=p['ramp_mw_hour']*r['hours']+1e-5)
             if a.technology=='storage':
                 expected=previous['soc_mwh']+x['charge_mwh']*p['efficiency_charge']-x['discharge_mwh']/p['efficiency_discharge']
                 checks['storage_SOC_bridge'] &= abs(expected-x['soc_mwh'])<1e-5
@@ -404,6 +433,11 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     participant_results={p:{'central_cash_eur':str(sum((v for k,v in ledger.balances().items() if k.startswith('participant:'+p+':') and not k.endswith(':private')),D(0))),
                             'private_cash_eur':str(ledger.balances().get('participant:'+p+':private',D(0)))} for p in participants}
     manifest=dict(library_version='0.3.2',ruleset=rules,parameter_id=parameters['id'],day=str(day),
+        rtbm_interval_minutes=rtbm_interval_minutes,rtbm_execution='sequential',
+        rtbm_research_approximation=rtbm_interval_minutes!=rules['rtbm_period_minutes'],
+        settlement_resolution='native_5min_based' if rtbm_interval_minutes==5 else '30min_research_approximation',
+        actual_observation_basis='current_interval_inputs_known_at_start' if rtbm_interval_minutes==30 else 'last_completed_interval_mean_MW',
+        rtbm_ramping='immediate' if rtbm_interval_minutes==30 else 'physical_trajectory',
         runtime=dict(python=platform.python_version(),pulp=lp.__version__,solver='HiGHS' if lp.HiGHS().available() else 'CBC'),
         scope='daily_accrual',excluded_uplifts=['UA-3','UA-4','UA-5','UA-6','UA-7'],current_rules_conformance_verified=False,synthetic_parameters=parameters.get('synthetic',False),
         physical_model='ISP_MTU_average_dispatch_and_30_second_RTBM_trajectories',
@@ -428,6 +462,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     inputs=dict(time_index=[t.isoformat() for t in index],participants=[asdict(p) for p in participants.values()],
         assets=[dict(id=a.id,participant=a.participant,technology=a.technology,parameters=deepcopy(a.parameters),
             strategy=asdict(a.strategy),initial_state=asdict(a.initial_state) if a.initial_state is not None else None) for a in assets],
+        rtbm_interval_minutes=rtbm_interval_minutes,actual_input_interval_minutes=actual_input_minutes,source_actual_mw_5min=actual_fine,
         storage_terminal_soc_mwh=deepcopy(storage_terminal_soc_mwh),must_run=must_run,forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
         system_forecast_mw=tso_rtu,system_observation_mw=observed_rtu,
         previous_system_observation=deepcopy(previous_system_observation),

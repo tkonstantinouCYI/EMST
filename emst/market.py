@@ -219,8 +219,10 @@ class Market:
     def run(self,*,time_index,reserve_requirements=None,price_forecast=None,historical_rtbm_prices=None,price_ranges=False,accounting_cycles=False,
             system_forecasts=None,system_observations=None,previous_system_observation=None,
             must_run_requirement_mw=None,must_run_supplier_shares=None,actual_balance_tolerance_mwh=1e-6,
-            storage_terminal_soc_mwh=None):
+            storage_terminal_soc_mwh=None,rtbm_interval_minutes=5):
         if accounting_cycles:raise NotImplementedError("The generic participant API currently runs daily settlement; full historical accounting remains available through emst.runner")
+        from .resolution import validate_minutes
+        validate_minutes(rtbm_interval_minutes)
         from .market_engine import run_market
         from .solver import session
         from .evaluation import enrich,residuals
@@ -229,7 +231,7 @@ class Market:
         with session(self.solver_config) as context:
             result=run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
                 system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares,
-                storage_terminal_soc_mwh)
+                storage_terminal_soc_mwh,rtbm_interval_minutes)
         return enrich(result,self,context['records'],actual_balance_tolerance_mwh)
 
     def evaluate(self,**inputs):

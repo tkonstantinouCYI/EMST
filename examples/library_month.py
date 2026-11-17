@@ -10,6 +10,7 @@ from emst import Market, ThermalState
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("month-results"))
+    parser.add_argument("--rtbm-interval-minutes",type=int,choices=(5,30),default=5)
     args = parser.parse_args()
 
     market = Market()
@@ -31,6 +32,7 @@ def main():
             "forecasts": {"solar": [10] * 48, "load": [250] * 48},
             "actuals": {"solar": [9] * 48, "load": [251] * 48},
             "historical_rtbm_prices": history,
+            "rtbm_interval_minutes":args.rtbm_interval_minutes,
             "must_run_requirement_mw": [180.] * 48,
             "reserve_requirements": {"FCR": {"up": [2] * 48, "down": [2] * 48}},
         }
@@ -59,7 +61,7 @@ def main():
         if e['component']==code),Decimal(0)) for code in daily_must_run}
     if daily_must_run!=closed_must_run or closed_must_run!={'S24':Decimal(144000),'S25':Decimal(0),'S26':Decimal(-144000)}:
         raise RuntimeError('Must-run service payment/recovery does not match monthly closure')
-    verification=dict(passed=True,days=30,mtus=1440,rtus=8640,auction_ids=sorted(auction_ids),
+    verification=dict(passed=True,days=30,mtus=1440,rtus=30*24*60//args.rtbm_interval_minutes,rtbm_interval_minutes=args.rtbm_interval_minutes,auction_ids=sorted(auction_ids),
         all_daily_stage_audits_passed=True,must_run_cash_eur={k:str(v) for k,v in closed_must_run.items()},
         monthly_matches_daily_must_run=True,meter_reconciliation=False)
     (args.output/'verification.json').write_text(json.dumps(verification,indent=2),encoding='utf-8')

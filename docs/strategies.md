@@ -362,3 +362,9 @@ See [planning integration](planning-integration.md) before interpreting storage
 cash as operating contribution or annual recovery. Custom stage-aware/price-maker
 policy hooks remain outside this milestone; economic-owner grouping does not
 coordinate offers.
+
+
+Storage now explicitly excludes simultaneous upward/downward activation per
+asset and interval in both ISP and RTBM, including equal-price offers. This is
+separate from physical charging/discharging exclusivity. See
+[formulation and benchmark procedure](storage-activation.md).

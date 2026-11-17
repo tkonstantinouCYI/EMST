@@ -564,3 +564,22 @@ allocations, service cashflows and reporting. Financial positions add a
 
 See [the planning guide](planning-integration.md) for exact schemas/conventions,
 strict strategy validation, pricing/fallback policy, failures and limitations.
+
+
+`Market.run(..., rtbm_interval_minutes=5)` remains the default; `30` enables the
+sequential research approximation. Daily inputs in `run_period` support the same
+key, with a consistent mode required across the run/resume. Raw/readable outputs,
+history, metering and monthly closure identify the selected resolution. See
+[RTBM resolution](rtbm-resolution.md).
+
+
+In the optional 30-minute mode, current-interval participant demand and RES actual
+inputs are assumed known at the interval start and used directly for RTBM.
+RTBM thermal/storage ramp limits are bypassed, while ISP ramp constraints,
+thermal phases, power bounds, storage SOC/efficiencies and directional
+exclusivity remain enforced. Independent TSO forecasts/observations remain
+available to ISP/projection and reporting; coarse executed clearing uses the
+participant inputs. The noon ISP bridge still cannot read future actuals.
+See [RTBM resolution](rtbm-resolution.md) for the information assumptions and
+comparison limits. The forecast-error and physical-trajectory descriptions above
+apply to the default five-minute RTBM.

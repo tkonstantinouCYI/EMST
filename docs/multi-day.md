@@ -41,7 +41,8 @@ The runner automatically carries actual ending thermal phase, phase duration,
 power, and storage power/SOC. Existing phase logic applies remaining minimum
 up/down obligations from this state. It also carries the last completed system
 observation and its uncorrected forecast, including the RES control add-back.
-The first interval of the next day therefore uses the latest completed reading.
+In five-minute mode, the first interval of the next day uses the latest completed reading.
+Thirty-minute mode instead uses the current interval inputs assumed known at its start.
 
 Settlement history uses the latest three simulated matching weekday/weekend
 days. Until three are available, a supplied historical-price bootstrap fills
@@ -155,3 +156,16 @@ Do not chain unrelated representative days as physical continuation or apply
 monthly closure to weighted medoids. Full-month planning requirements for a
 monthly must-run auction do not provide next-day lookahead to physical dispatch.
 Load-loss reliability remains unassessed. See [planning integration](planning-integration.md).
+
+
+## Optional coarse RTBM
+
+Add `rtbm_interval_minutes: 30` to every daily scenario for half-hour sequential
+execution. All days in one run, on resume and in one closed month must use the
+same resolution. The checkpoint stores that choice, its 48-price/day history and
+last completed half-hour observation for provenance; coarse clearing uses the current
+interval participant demand and RES with immediate ramping. Defaults remain five minutes and 288 prices.
+Three-day native bootstrap sets are averaged when initializing coarse history;
+coarse history is never expanded into fabricated five-minute prices. Monthly
+closure labels coarse results as a research approximation. See
+[the resolution guide](rtbm-resolution.md).

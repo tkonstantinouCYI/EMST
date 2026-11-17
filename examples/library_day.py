@@ -55,12 +55,13 @@ def build_market(dataframes=False,storage_energy=False,storage_capacity=False):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--dataframes',action='store_true')
     parser.add_argument('--storage-energy',action='store_true');parser.add_argument('--storage-capacity',action='store_true')
+    parser.add_argument('--rtbm-interval-minutes',type=int,choices=(5,30),default=5)
     parser.add_argument('--output',default='output/public_library_day');args=parser.parse_args()
     market,index,requirements,history=build_market(args.dataframes,args.storage_energy,args.storage_capacity)
     # A user supplies TSO forecasts independently of participants' bid forecasts.
     tso={'demand':[sum(float(a.forecast.iloc[t,0] if args.dataframes else a.forecast[t]) for a in market.assets.values() if a.technology=='supplier')+1 for t in range(48)],
          'res':[float(market.assets['solar_portfolio'].forecast.iloc[t,0] if args.dataframes else market.assets['solar_portfolio'].forecast[t])*.99 for t in range(48)]}
-    results=market.run(time_index=index,must_run_requirement_mw=[180.]*48,system_forecasts=tso,reserve_requirements=requirements,historical_rtbm_prices=history)
+    results=market.run(time_index=index,rtbm_interval_minutes=args.rtbm_interval_minutes,must_run_requirement_mw=[180.]*48,system_forecasts=tso,reserve_requirements=requirements,historical_rtbm_prices=history)
     results.save(args.output)
     readable = results.save_readable(args.output)
     print(f"Readable results: {readable['operator']}")

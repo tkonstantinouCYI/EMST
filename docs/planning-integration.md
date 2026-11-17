@@ -264,3 +264,9 @@ DST, interconnections, intraday auctions, actual-delivery recourse, custom
 stage-aware policies and official-rule calibration remain separate workstreams.
 The current normal-48-MTU-day API must not be advertised as an unrestricted
 chronological calendar-year engine.
+
+
+Storage now explicitly excludes simultaneous upward/downward activation per
+asset and interval in both ISP and RTBM, including equal-price offers. This is
+separate from physical charging/discharging exclusivity. See
+[formulation and benchmark procedure](storage-activation.md).

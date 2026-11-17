@@ -235,3 +235,29 @@ No PYTHONPATH workaround is needed. Results and collection errors are written to
 keeps validation runs separate. The CI matrix covers Windows/Linux,
 Python 3.11/3.14 and HiGHS 1.15.1/1.16.0. See the
 [maintainer response](docs/maintainer-response.md) for the review scope and limits.
+
+
+Storage ISP/RTBM uses separate upward/downward activation variables with binary
+exclusivity. Physical charging/discharging also remains exclusive; when MS is
+zero, both direction choices reuse the same binary. SOC, efficiencies and power
+constraints remain enforced. See the [formulation, tests and paired daily
+benchmark](docs/storage-activation.md).
+
+
+## Optional 30-minute sequential RTBM
+
+Five-minute sequential RTBM remains the default. For faster research scenarios,
+use `market.run(..., rtbm_interval_minutes=30)` or:
+
+```sh
+python examples/library_day.py --rtbm-interval-minutes 30 --output results30
+python examples/library_month.py --rtbm-interval-minutes 30 --output month30
+```
+
+This runs 48 sequential intervals per normal day, using current-interval demand and RES assumed known at its start, with immediate
+ramping and thermal/storage state carryover. Five-minute mode retains its existing
+forecast/observation and physical-ramp behaviour. It is explicitly
+labelled a **30-minute RTBM and settlement research approximation**. It does not
+produce artificial five-minute prices or use full-day perfect foresight. Dispatch,
+prices, cashflows and residuals can differ from native five-minute execution.
+See [inputs, timing/accuracy comparison and limitations](docs/rtbm-resolution.md).

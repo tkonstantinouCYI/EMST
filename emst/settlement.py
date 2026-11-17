@@ -134,8 +134,8 @@ def instructed_cash(instq, system, marginal_up, marginal_down, last_up, last_dow
     return -abs(instq)*(last_down if system=="short" else marginal_down)
 
 
-def period_price(rtus, history):
-    if len(history)!=3 or any(len(day)!=6 for day in history):
+def period_price(rtus, history, *, history_interval_count=6):
+    if len(history)!=3 or any(len(day)!=history_interval_count for day in history):
         raise ValueError("Three complete corresponding historical RTU price sets required")
     weighted = gross_weighted = weight_sum = gross_sum = 0.
     nets = []
@@ -149,7 +149,7 @@ def period_price(rtus, history):
         gross_weighted += gross*r["price_eur_mwh"]
         weight_sum += weight
         gross_sum += gross
-    fallback = sum(float(p) for day in history for p in day)/18
+    fallback = sum(float(p) for day in history for p in day)/(3*history_interval_count)
     scarcity=[r.get('slack',{}).get('energy_shortage_mwh',0)+r.get('slack',{}).get('energy_surplus_mwh',0) for r in rtus]
     scarcity_fallback=weight_sum<=1e-7 and sum(scarcity)>1e-7
     marginal = weighted/weight_sum if weight_sum>1e-7 else (sum(w*r['price_eur_mwh'] for w,r in zip(scarcity,rtus))/sum(scarcity) if scarcity_fallback else fallback)

@@ -50,10 +50,11 @@ def _kind(day):
     return 'weekend' if day.weekday()>=5 else 'weekday'
 
 
-def _history(value):
-    result={int(k):[[float(p) for p in row] for row in v] for k,v in value.items()}
-    if set(result)!=set(range(48)) or any(len(v)!=3 or any(len(r)!=6 for r in v) for v in result.values()):
-        raise ValueError('Historical bootstrap requires 48 periods, each with three six-price days')
+def _history(value,per_mtu=6):
+    from .resolution import history_sets
+    result={int(k):history_sets(v,per_mtu) for k,v in value.items()}
+    if set(result)!=set(range(48)):
+        raise ValueError('Historical bootstrap requires 48 MTUs')
     _json(result)
     return result
 
@@ -128,10 +129,17 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
         raise ValueError('Cannot change must-run auction frequency on resume')
     daily={_day(k):v for k,v in scenario.items()}
     dates=[start+timedelta(days=i) for i in range((end-start).days+1)]
+    from .resolution import validate_minutes
+    resolutions={validate_minutes(daily[d].get('rtbm_interval_minutes',5)) for d in dates if d in daily}
+    if len(resolutions)>1:raise ValueError('Multi-day execution requires one consistent RTBM resolution')
+    minutes=next(iter(resolutions),5);per_mtu=30//minutes
+    if resume_from and state.get('rtbm_interval_minutes',5)!=minutes:
+        raise ValueError('Cannot change RTBM resolution on resume')
+    state['rtbm_interval_minutes']=minutes
     series_assets={a.id for a in market.assets.values() if a.technology in ('res','supplier')}
     allowed={'forecasts','actuals','forwards','reserve_requirements','price_forecast',
         'historical_rtbm_prices','price_ranges','system_forecasts','system_observations',
-        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh'}
+        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh','rtbm_interval_minutes'}
     for day in dates:
         if day not in daily:raise ValueError(f'Missing scenario for {day}')
         data=daily[day]
@@ -193,12 +201,12 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
             if 'previous_system_observation' in data:raise ValueError('A carried observation cannot be overridden')
             data['previous_system_observation']=state['previous_system_observation']
         supplied=data.pop('historical_rtbm_prices',None)
-        if supplied is not None:state['bootstrap'][kind]=_history(supplied)
+        if supplied is not None:state['bootstrap'][kind]=_history(supplied,per_mtu)
         past=[r for r in state['price_history'] if _kind(_day(r['day']))==kind][-3:]
         seed=state['bootstrap'].get(kind)
         if len(past)<3 and seed is None:
             raise ValueError(f'{day}: supply historical_rtbm_prices to bootstrap {kind} prices')
-        history={t:([r['prices'][t*6:t*6+6] for r in past]+
+        history={t:([r['prices'][t*per_mtu:(t+1)*per_mtu] for r in past]+
             ([] if len(past)==3 else (seed.get(t,seed.get(str(t))))[len(past):])) for t in range(48)}
         result=working.run(time_index=market.time_index(day),historical_rtbm_prices=history,**data)
         result.manifest['execution_mode']='chronological_daily_horizons'

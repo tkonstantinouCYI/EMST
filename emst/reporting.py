@@ -156,7 +156,8 @@ def _shared(result):
             system_position='short' if up > down + 1e-7 else 'long' if down > up + 1e-7 else 'balanced',
             marginal_price_eur_mwh=row['price_eur_mwh'], demand_mwh=row['actual_demand_mwh'],
             res_generation_mwh=row['actual_RES_mwh'], physical_imbalance_mwh=row['physical_imbalance_mwh']))
-    stages['rtbm']['summary'] = dict(intervals=intervals,
+    stages['rtbm']['summary'] = dict(interval_minutes=result.manifest.get('rtbm_interval_minutes',5),
+        research_approximation=result.manifest.get('rtbm_research_approximation',False),intervals=intervals,
         total_energy_up_mwh=sum(r['energy_up_mwh'] for r in intervals),
         total_energy_down_mwh=sum(r['energy_down_mwh'] for r in intervals))
     settlement = []
@@ -178,7 +179,7 @@ def _shared(result):
             record[name] = str(sum((Decimal(e['cash_eur']) for e in result.ledger
                 if e['component'] in codes and e['period'].endswith(f':{t:03}')), Decimal(0)))
         settlement.append(record)
-    stages['settlement']['summary'] = dict(intervals=settlement)
+    stages['settlement']['summary'] = dict(resolution=result.manifest.get('settlement_resolution','native_5min_based'),intervals=settlement)
     return stages
 
 
@@ -262,7 +263,7 @@ def _participant(result, participant):
         for asset in sorted(assets - row['assets'].keys()):
             actual = result.inputs['actual_mw'][asset][i] * row['hours']
             records.append(dict(_interval(row['at'], row['hours'], row['period']), asset_id=asset,
-                market_schedule_mwh=schedules[asset, row['period']]['MSQ_mwh'] / 6,
+                market_schedule_mwh=schedules[asset, row['period']]['MSQ_mwh'] * row['hours'] / .5,
                 actual_consumption_mwh=actual, isp_run_id=row['isp_run']))
     stages['rtbm'] = dict(intervals=records)
     financials = {}
@@ -325,6 +326,8 @@ def readable_results(result, *, audience='shared', participant=None):
         simulation_summary=dict(period_start=day, period_end=day,
             days=[dict(date=day, summary=dict(audit_passed=result.audit['passed'],
                 trading_intervals=len(result.inputs['time_index']), rtbm_intervals=len(result.rtbm),
+                rtbm_interval_minutes=result.manifest.get('rtbm_interval_minutes',5),
+                rtbm_research_approximation=result.manifest.get('rtbm_research_approximation',False),
                 actual_balance=deepcopy(result.diagnostics.get('actual_balance',{})),
                 forecast_clearing_without_slack=result.manifest.get('physical_security_feasible'),
                 total_demand_mwh=sum(r['actual_demand_mwh'] for r in result.rtbm),
@@ -371,7 +374,8 @@ def readable_month(results, monthly, *, audience='shared', participant=None):
     summary = report['simulation_summary']
     summary['period_end'] = dates[-1]
     summary['days'] = [r['simulation_summary']['days'][0] for r in reports]
-    closure = dict(month=month, days=len(dates), excluded_uplifts=monthly['excluded_uplifts'],
+    closure = dict(rtbm_interval_minutes=monthly.get('rtbm_interval_minutes',5),
+                   settlement_resolution=monthly.get('settlement_resolution','native_5min_based'),month=month, days=len(dates), excluded_uplifts=monthly['excluded_uplifts'],
                    reconciliation=False)
     if audience != 'shared':
         ids = sorted({p for day in summary['days'] for p in day['market_stages']['settlement']['participants']})

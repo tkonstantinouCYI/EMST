@@ -49,7 +49,7 @@ class Ruleset:
             raise NotImplementedError("Interconnections and intraday auctions are not implemented in this release")
         if not all(d["markets"][k] for k in ("day_ahead","balancing")):
             raise NotImplementedError("This daily pipeline requires DAM and balancing")
-        if (d["trading_period_minutes"],d["rtbm_period_minutes"])!=(30,5):raise ValueError("Supported resolutions are 30-minute MTUs and 5-minute RTUs")
+        if (d["trading_period_minutes"],d["rtbm_period_minutes"])!=(30,5):raise ValueError("Ruleset resolutions are 30-minute MTUs and 5-minute RTUs; use run(rtbm_interval_minutes=30) for the research approximation")
         if d["scheduled_isp"]!={"solve_at":"11:00","effective_from":"12:00"}:raise NotImplementedError("Only the current 11:00/noon scheduled ISP is supported")
         if not d["dispatch_equals_delivery"]:raise NotImplementedError("The public API currently uses instructed dispatch as delivered energy")
         if d["reserve_pricing"]!="fixed_discrete_lp_shadow_prices":raise NotImplementedError("Unsupported reserve-pricing method")
