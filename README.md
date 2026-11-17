@@ -4,6 +4,30 @@ EMST is a Python library for simulating the isolated Cyprus electricity market.
 Define participants, thermal units, renewables, storage and demand scenarios, then
 run daily or monthly simulations with market clearing and settlement.
 
+## Planning diagnostics and investment integration
+
+Version 0.3.2 adds solver settings and solve records, validated RTBM smoothing
+fallbacks, explicit actual-balance diagnostics, asset operating-cost/cash
+reconciliation, economic-owner grouping, and optional realized terminal SOC.
+Strategies now reject unknown parameters. **Optimization feasibility does not
+establish actual load-loss reliability**: EENS/LOLE remain unassessed.
+
+See [the planning integration guide](docs/planning-integration.md) for units,
+accounting boundaries, independent-day/month workflows, structured failures,
+endpoint choices and deferred capabilities. Raw exports now also include
+`diagnostics.json` and `economics.json`; private readable reports include asset
+costs and participant cash attribution.
+
+After installation, run the paired interface pilot with:
+
+```sh
+python examples/planning_pilot.py --output planning-results
+```
+
+It includes three capacity cases, a biased forecast and a repeated baseline;
+`planning-results/verification.json` records the checks. These are synthetic
+interface checks, not investment recommendations or controlled speed benchmarks.
+
 ## Install from GitHub
 
 Use Python 3.11 or later.
@@ -30,7 +54,10 @@ On Linux or macOS, run:
 
 The audit extra installs the HiGHS solver. The example writes a synthetic
 trading day's outputs to the results folder. The base library can also be
-installed with `python -m pip install .`.
+installed with `python -m pip install .`. On Windows use a short checkout path if
+pip reports a long-path error; editable installation with
+`python -m pip install -e ".[audit]"` is an alternative. Use the normal writable
+Windows temporary directory when building packages.
 
 The daily example saves the original raw stage JSON files alongside:
 
@@ -193,3 +220,18 @@ python tools/run_tests.py
 
 These are synthetic rules-based simulations. Current-rules conformance and
 calibration against observed Cyprus operation remain to be verified.
+
+
+## Run the regression tests
+
+From the repository root after installation:
+
+```sh
+python tools/run_tests.py
+```
+
+No PYTHONPATH workaround is needed. Results and collection errors are written to
+`output/unit-tests-<backend>.json` and `.log`. Optional `--output DIRECTORY`
+keeps validation runs separate. The CI matrix covers Windows/Linux,
+Python 3.11/3.14 and HiGHS 1.15.1/1.16.0. See the
+[maintainer response](docs/maintainer-response.md) for the review scope and limits.

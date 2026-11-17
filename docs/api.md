@@ -547,3 +547,20 @@ Must-run procurement is optional: see [MW-based must-run auctions](must-run.md)
 for thermal participation, daily/monthly requirements, zero-price energy
 allocations, service cashflows and reporting. Financial positions add a
 `must_run_cash_eur` column for S24/S25/S26, separate from UA1 and UA2.
+
+
+## Planning interfaces (0.3.2)
+
+- `Market(..., solver_config={...})` copies global/stage solver settings.
+- `add_participant(..., economic_owner="owner")` groups reporting while retaining
+  separate unit participants and BRPs.
+- `run(..., actual_balance_tolerance_mwh=1e-6,
+  storage_terminal_soc_mwh={"battery": 20})` explicitly declares physical balance
+  tolerance and an optional realized inventory boundary.
+- `results.diagnostics` / `results.economics` expose solve quality, actual residuals,
+  asset operating costs and attributed/unallocated participant cash.
+- `results.to_evaluation()` / `market.evaluate(**daily_inputs)` provide the compact
+  JSON-safe evaluation success/failure contract.
+
+See [the planning guide](planning-integration.md) for exact schemas/conventions,
+strict strategy validation, pricing/fallback policy, failures and limitations.

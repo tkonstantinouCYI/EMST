@@ -32,9 +32,11 @@ market.add_participant(
 An asset's explicit `strategy` overrides its owner's default. Asset calls accept
 either a name plus `strategy_parameters`, or a `Strategy(name, parameters)`
 instance. When supplying an instance, put the parameters inside that instance:
-the separate `strategy_parameters` argument does not override it. The strategy
-registry validates names against technology; parameter dictionaries do not have
-a strict schema, and unknown keys can be ignored. Use the exact keys below.
+supplying a separate `strategy_parameters` argument alongside an instance is an
+error. Names and parameter keys are strictly validated. Unknown keys and
+nonfinite scalar values are rejected. Inputs are copied; profile timestamps,
+length and physical feasibility are checked when running. Use the exact keys
+below. A strategy terminal SOC cannot exceed the registered energy capacity.
 
 The following examples are independent snippets: each creates its own market
 and asset. They demonstrate configuration, not a complete runnable system.
@@ -347,3 +349,16 @@ There is no next-day lookahead or terminal value for future trading days.
 Settlement cashflows, including UA1 and UA2, are calculated from cleared and
 delivered results; strategies do not set settlement prices or uplift allocations.
 See the [API guide](api.md) for units, eligibility and result exports.
+
+
+## Realized endpoint and planning use
+
+The optional daily `storage_terminal_soc_mwh={"battery": 20.0}` is separate from
+a strategy's proposed-profile endpoint. It constrains both ISP plans and actual
+RTBM end-of-day SOC, with reachable-energy bounds during execution. Its default
+is None. `fixed_circular` does not imply a realized cyclic endpoint, and a
+`forecast_arbitrage` strategy target alone does not guarantee actual ending SOC.
+See [planning integration](planning-integration.md) before interpreting storage
+cash as operating contribution or annual recovery. Custom stage-aware/price-maker
+policy hooks remain outside this milestone; economic-owner grouping does not
+coordinate offers.

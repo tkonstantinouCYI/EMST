@@ -138,3 +138,20 @@ shares are rejected. Use `must_run_auction_frequency="daily"` for independent da
 auctions in partial studies. Physical dispatch still has no next-day lookahead;
 monthly procurement uses the explicitly supplied monthly planning forecasts.
 See [must-run details and limitations](must-run.md).
+
+
+## Planning boundaries and solver provenance
+
+Daily scenario dictionaries may also specify `actual_balance_tolerance_mwh` and
+`storage_terminal_soc_mwh`. The latter is an explicit realized end-of-day target,
+not merely a proposed DAM-profile condition. Solver configuration and economic
+ownership are included in the market configuration fingerprint; changed
+candidates or solver settings cannot resume an old checkpoint. Raw results retain
+solve records, actual residual diagnostics, initial/ending states and asset cost
+accounting. Runtime measurements can differ on identical economic runs.
+
+`execution_mode` distinguishes independent runs from chronological daily horizons.
+Do not chain unrelated representative days as physical continuation or apply
+monthly closure to weighted medoids. Full-month planning requirements for a
+monthly must-run auction do not provide next-day lookahead to physical dispatch.
+Load-loss reliability remains unassessed. See [planning integration](planning-integration.md).

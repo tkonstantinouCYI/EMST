@@ -98,7 +98,13 @@ class SystemDailyTests(unittest.TestCase):
         self.assertEqual(changed.rtbm[20]['assets'],base.rtbm[20]['assets'])
         self.assertAlmostEqual(changed.rtbm[21]['system_prediction']['net_demand_prediction_mw']-base.rtbm[21]['system_prediction']['net_demand_prediction_mw'],8)
         self.assertGreater(sum(x['energy_mwh'] for x in changed.rtbm[21]['assets'].values()),sum(x['energy_mwh'] for x in base.rtbm[21]['assets'].values()))
-        self.assertEqual(changed.rtbm[22]['system_prediction'],base.rtbm[22]['system_prediction'])
+        # Executed curtailment add-back can carry sub-micro-MW LP noise after
+        # the shock. Preserve exact causality above; compare restored numeric
+        # predictions within 1e-6 MW, not bit-for-bit solver basis equality.
+        for key,value in base.rtbm[22]['system_prediction'].items():
+            actual=changed.rtbm[22]['system_prediction'][key]
+            if isinstance(value,float):self.assertAlmostEqual(actual,value,delta=1e-6)
+            else:self.assertEqual(actual,value)
 
 
 if __name__=='__main__':unittest.main()

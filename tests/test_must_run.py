@@ -1,5 +1,6 @@
 from copy import deepcopy
 from dataclasses import asdict
+from tests_support import without_runtime
 from decimal import Decimal, localcontext
 from pathlib import Path
 import json
@@ -86,7 +87,7 @@ class MustRunTests(unittest.TestCase):
                 resumed=market().run_period(start='2026-11-02',end='2026-11-02',scenario=scenarios,
                     checkpoint_directory=root/'split',resume_from=first.checkpoint)
             for day in continuous.days:
-                self.assertEqual(json.loads(json.dumps(asdict(continuous.days[day]))),json.loads(json.dumps(asdict(resumed.days[day]))))
+                self.assertEqual(without_runtime(json.loads(json.dumps(asdict(continuous.days[day])))),without_runtime(json.loads(json.dumps(asdict(resumed.days[day])))))
             saved=json.loads(first.checkpoint.read_text())['state']['must_run_auctions']['2026-11']
             self.assertEqual(len(saved['awards']),30)
             self.assertEqual(saved['supplier_shares'],{'supplier_A':.6,'supplier_B':.4})

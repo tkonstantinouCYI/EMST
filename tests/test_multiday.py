@@ -1,5 +1,6 @@
 from copy import deepcopy
 from dataclasses import asdict
+from tests_support import without_runtime
 import json
 from pathlib import Path
 import tempfile
@@ -57,8 +58,8 @@ class MultiDayIntegrationTests(unittest.TestCase):
             self.assertEqual(continuous.completed_days,resumed.completed_days)
             for day in continuous.days:
                 # JSON normalises integer-keyed tables as in saved results.
-                left=json.loads(json.dumps(asdict(continuous.days[day])))
-                right=json.loads(json.dumps(asdict(resumed.days[day])))
+                left=without_runtime(json.loads(json.dumps(asdict(continuous.days[day]))))
+                right=without_runtime(json.loads(json.dumps(asdict(resumed.days[day]))))
                 self.assertEqual(left,right)
                 self.assertTrue(continuous.days[day].audit['passed'])
             one,two=continuous.days.values()
@@ -78,6 +79,10 @@ class MultiDayIntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'newer checkpoint'):
                 m.run_period(start='2026-11-06',end='2026-11-06',scenario=inputs,
                     checkpoint_directory=root/'split',resume_from=root/'split'/'checkpoint-2026-11-05.json')
+            different_candidate=market();different_candidate.assets['store'].parameters['capacity_mwh']=11
+            with self.assertRaisesRegex(ValueError,'configuration'):load_checkpoint(resumed.checkpoint,different_candidate)
+            different_solver=market();different_solver.solver_config['time_limit_seconds']=2
+            with self.assertRaisesRegex(ValueError,'configuration'):load_checkpoint(resumed.checkpoint,different_solver)
             changed=market();changed.settlement_parameters['reserve_cost_per_day_eur']=1
             with self.assertRaisesRegex(ValueError,'configuration'):
                 load_checkpoint(resumed.checkpoint,changed)

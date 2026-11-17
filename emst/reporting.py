@@ -284,7 +284,8 @@ def _participant(result, participant):
             asset_owner=owner, balancing_responsibility=balance_owners[owner] == participant,
             market_schedule_mwh=meter['MSQ_mwh'], metered_energy_mwh=meter['actual_mwh'],
             instructed_imbalance_mwh=meter['INSTQ_mwh'], uninstructed_imbalance_mwh=meter['UNINSTQ_mwh']))
-    stages['settlement'].update(meters=meters,
+    stages['settlement'].update(economic_owner=next((p.get('economic_owner') or p['id'] for p in result.inputs['participants'] if p['id']==participant),participant),asset_economics={aid:deepcopy(data) for aid,data in result.economics.get('assets',{}).items() if aid in assets},
+        participant_cash_attribution=deepcopy(result.economics.get('participants',{}).get(participant,{})),meters=meters,
         financial_position=_financial_position(result, participant),
         total_participant_cash_eur=str(sum((Decimal(stages[s]['cash_eur'])
             for s in ('must_run_auction','forward_market', 'day_ahead_market', 'settlement')), Decimal(0))),
@@ -319,11 +320,13 @@ def readable_results(result, *, audience='shared', participant=None):
                 else:
                     stages[name]['participants'][owner] = values
     day = result.manifest['day']
-    return dict(schema_version='1.0', audience=audience,
+    return dict(schema_version='1.1', audience=audience,
         cash_convention='positive_receipt_negative_payment',
         simulation_summary=dict(period_start=day, period_end=day,
             days=[dict(date=day, summary=dict(audit_passed=result.audit['passed'],
                 trading_intervals=len(result.inputs['time_index']), rtbm_intervals=len(result.rtbm),
+                actual_balance=deepcopy(result.diagnostics.get('actual_balance',{})),
+                forecast_clearing_without_slack=result.manifest.get('physical_security_feasible'),
                 total_demand_mwh=sum(r['actual_demand_mwh'] for r in result.rtbm),
                 total_res_generation_mwh=sum(r['actual_RES_mwh'] for r in result.rtbm)),
                 market_stages=stages)]))

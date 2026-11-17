@@ -2,7 +2,8 @@
 import math
 from copy import deepcopy
 import pulp as lp
-from .optimization import solve,freeze_discrete,dual_face
+from .optimization import solve,freeze_discrete,dual_face,primal_violation
+from .solver import stage,purpose,SolveError
 from .model import PRODUCTS,UP,DOWN,RESPONSE_HOURS
 from .physics import thermal_path
 from .offers import asset_energy_prices
@@ -10,7 +11,8 @@ from .relaxation import build as build_slacks,quantities as slack_quantities,use
 from .phases import build as build_phases,bind_average_power,row_phase,canonical,PHASES
 
 
-def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None):
+@stage(lambda *args,**kwargs: 'RTBM_projection' if kwargs.get('projection',False) else 'RTBM' if kwargs.get('rtbm',False) else 'ISP')
+def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None,terminal_time=None,projection=False):
     thermal=[a for a in assets if a.technology=="thermal"]
     storage=[a for a in assets if a.technology=="storage"]
     renewables=[a for a in assets if a.technology=='res']
@@ -117,8 +119,15 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
             buy=float(a.strategy.parameters.get('balancing_down_price',0));sell=float(a.strategy.parameters.get('balancing_up_price',100))
             terms += [sell*up[k]-buy*down[k]]
             if rtbm:terms.append((charge[k]+discharge[k])*dt*v['degradation_cost'])
-        if storage_terminal_soc is not None:
-            m+=soc[a.id,len(intervals)-1]==storage_terminal_soc[a.id]
+        if storage_terminal_soc is not None and a.id in storage_terminal_soc:
+            target=storage_terminal_soc[a.id]
+            if not rtbm or terminal_time is None:
+                m+=soc[a.id,len(intervals)-1]==target
+            else:
+                for j,t in enumerate(intervals):
+                    remaining=max(0.,(terminal_time-t.end).total_seconds()/3600)
+                    m+=soc[a.id,j]>=target-v['power_mw']*v['efficiency_charge']*remaining
+                    m+=soc[a.id,j]<=target+v['power_mw']/v['efficiency_discharge']*remaining
     for j,t in enumerate(intervals):
         weights={a.id:max(0,(res_forecasts or {}).get(a.id,[1.]*len(intervals))[j]) for a in renewables}
         if renewables and sum(weights.values())<=1e-12:
@@ -146,7 +155,8 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 m+=lp.lpSum(reserve[a.id,j,product] for a in thermal+storage)+reserve_shortage[product,j]>=requirements[product][j],f"requirement_{product}_{j}"
     terms.extend(slack_costs.values())
     m+=lp.lpSum(terms)
-    milp=solve(m);frozen=freeze_discrete(m);fixed=solve(m,False)
+    milp=solve(m);frozen=freeze_discrete(m)
+    with purpose('fixed_discrete_pricing'):fixed=solve(m,False)
     if abs(milp-fixed)>1e-3:raise RuntimeError("Fixed-discrete dispatch LP changed the optimum")
     prices=[float(m.constraints[f'energy_{j}'].pi)/t.hours for j,t in enumerate(intervals)]
     reserve_prices=[{} for _ in intervals] if rtbm else [{x:float(m.constraints[f'requirement_{x}_{j}'].pi) if requirements[x][j]>1e-9 else 0. for x in PRODUCTS} for j in range(len(intervals))]
@@ -156,9 +166,14 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
         _,bounds=dual_face(m,names,True,select=False)
     # Select smooth physical trajectories on the primary optimum face. Prices
     # above remain the primary fixed-discrete LP duals, never smoothing duals.
+    smoothing=dict(status='not_required')
     if rtbm and paths:
         primary=m.objective
-        tolerance=1e-5 if isinstance(m.solver,lp.PULP_CBC_CMD) else 1e-8
+        primary_variables=list(m.variables());primary_constraints=list(m.constraints.values())
+        saved={v:v.varValue for v in primary_variables}
+        if primal_violation(primary_variables,primary_constraints)>1e-5:
+            raise RuntimeError('Primary RTBM solution violates physical constraints before smoothing')
+        tolerance=max(1e-5,abs(fixed)*1e-9)
         m+=primary<=fixed+tolerance
         m+=primary>=fixed-tolerance
         smooth=[]
@@ -170,7 +185,23 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
             terminal=lp.LpVariable(f'terminal_smooth_{aid}_{j}',0)
             m+=terminal>=nodes[-1]-p[aid,j];m+=terminal>=p[aid,j]-nodes[-1]
             smooth.append(terminal)
-        m.setObjective(lp.lpSum(smooth));solve(m,False)
+        m.setObjective(lp.lpSum(smooth))
+        smoothing=dict(status='succeeded',primary_objective_eur=fixed,objective_tolerance_eur=tolerance)
+        try:
+            with purpose('trajectory_smoothing'):solve(m,False)
+            violation=primal_violation(primary_variables,primary_constraints)
+            deviation=abs(float(lp.value(primary))-fixed)
+            if violation>1e-5 or deviation>tolerance+1e-7:
+                raise RuntimeError('Smoothed RTBM solution failed primal/economic validation')
+        except (SolveError,RuntimeError) as error:
+            for variable,value in saved.items():variable.varValue=value
+            violation=primal_violation(primary_variables,primary_constraints)
+            deviation=abs(float(lp.value(primary))-fixed)
+            if violation>1e-5 or deviation>tolerance+1e-7:raise RuntimeError('Certified primary RTBM fallback failed validation') from error
+            smoothing.update(status='fallback_primary',reason=str(error),
+                failed_solve=error.record if isinstance(error,SolveError) else None)
+        smoothing.update(max_primary_constraint_violation=violation,primary_objective_deviation_eur=deviation,
+            prices_source='fixed_discrete_pricing')
     rows=[]
     for j,t in enumerate(intervals):
         group={}
@@ -212,7 +243,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
         rows.append(dict(period=t.period,at=t.start.isoformat(),hours=t.hours,assets=group,
                          res_curtailment_mw=float(lp.value(curt[j])),res_commercial_curtailment_mw=commercial_curt[j],
                          res_dispatch_reference_mw=res[j]-commercial_curt[j],slack=slack_quantities(j,shortage,surplus,reserve_shortage),
-                         price_eur_mwh=prices[j],reserve_prices=reserve_prices[j]))
+                         price_eur_mwh=prices[j],reserve_prices=reserve_prices[j],smoothing=deepcopy(smoothing)))
     objective_components=None
     if not rtbm:
         objective_components=dict(
@@ -224,7 +255,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
         objective_components['total']=objective_components['energy_up_cost']-objective_components['energy_down_credit']+objective_components['reserve_capacity_cost']+objective_components['startup_cost']+sum(objective_components[k] for k in slack_costs)
         if abs(objective_components['total']-fixed)>1e-3:raise RuntimeError('ISP offer objective reconciliation failed')
     return dict(solution_class="relaxed_with_slack" if slack_used([r["slack"] for r in rows]) else "feasible_without_slack",
-                objective_components_eur=objective_components,physical_security_feasible=not slack_used([r["slack"] for r in rows]),
+                smoothing=smoothing,objective_components_eur=objective_components,physical_security_feasible=not slack_used([r["slack"] for r in rows]),
                 slack_by_period=[r["slack"] for r in rows],status="Optimal",milp_objective_eur=milp,fixed_lp_objective_eur=fixed,
                 frozen_discrete=frozen,rows=rows,pricing_method="fixed_discrete_lp_shadow_prices",
                 reserve_dual_ranges=bounds,price_range_diagnostics_performed=price_ranges and not rtbm,capacity_products=[] if rtbm else list(PRODUCTS),

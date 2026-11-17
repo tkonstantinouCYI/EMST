@@ -66,7 +66,7 @@ def _advance(assets,state,rows,minutes):
 
 def run_market(market,time_index,reserve_requirements,price_forecast,historical_rtbm_prices=None,price_ranges=False,
                system_forecasts=None,system_observations=None,previous_system_observation=None,
-               must_run_requirement_mw=None,must_run_supplier_shares=None):
+               must_run_requirement_mw=None,must_run_supplier_shares=None,storage_terminal_soc_mwh=None):
     from .market import MarketResults
     index=timestamps(time_index)
     if not index:raise ValueError('Empty market time index')
@@ -92,6 +92,11 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         if a.technology=='res' and a.parameters['capacity_mw'] is not None:
             if max(forecast[a.id]+actual[a.id])>a.parameters['capacity_mw']+1e-6:raise ValueError('RES time series exceeds registered capacity')
     if not any(a.technology=='supplier' for a in assets):raise ValueError('At least one demand portfolio is required')
+    if storage_terminal_soc_mwh is not None:
+        if not isinstance(storage_terminal_soc_mwh,dict):raise ValueError('storage_terminal_soc_mwh must map storage asset IDs to MWh')
+        for aid,target in storage_terminal_soc_mwh.items():
+            if aid not in market.assets or market.assets[aid].technology!='storage' or isinstance(target,bool) or not math.isfinite(target) or not 0<=target<=market.assets[aid].parameters['capacity_mwh']:
+                raise ValueError('Invalid realized terminal storage SOC target')
     requirements=reserve_series(reserve_requirements,index)
     if any(requirements['RR_up']):raise NotImplementedError('Public API RR procurement needs a contract-award adapter; use the existing fixture runner for monthly RR')
     prices=None
@@ -188,13 +193,13 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         observation_update(load[0],renewable[0],previous=previous_system_observation)
     def plan(start,initial):
         return dispatch(assets,initial,periods[start:],load[start:],renewable[start:],
-            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,mandatory_on={a.id:mandatory[a.id][start:] for a in assets if a.technology=='thermal'},price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'})
+            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,storage_terminal_soc=storage_terminal_soc_mwh,mandatory_on={a.id:mandatory[a.id][start:] for a in assets if a.technology=='thermal'},price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'})
     first=plan(0,state);first.update(id='ISP_initial',cutoff=datetime.combine(day,time(16),CYPRUS).isoformat(),first_period=0)
     # Initial cutoff is on the previous calendar day.
     from datetime import timedelta
     first['cutoff']=(datetime.combine(day,time(16),CYPRUS)-timedelta(days=1)).isoformat()
     runs=[first];effective={r['period']:r for r in first['rows']};active='ISP_initial';pending=None;rtbm=[]
-    def clear_one(interval,current,rows,previous=None,measurement_index=None):
+    def clear_one(interval,current,rows,previous=None,measurement_index=None,projection=False):
         t=interval.period
         position=t*6+(interval.local.minute%30)//5
         horizon=rtus[position:(t+1)*6];n=len(horizon)
@@ -202,7 +207,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         result=dispatch(assets,current,horizon,[x['demand_prediction_mw'] for x in predictions],
             [x['res_prediction_mw'] for x in predictions],
             {a.id:[schedules[a.id][t]/6]*n for a in assets},
-            {},rules,
+            {},rules,projection=projection,storage_terminal_soc=storage_terminal_soc_mwh,terminal_time=periods[-1].end,
             mandatory_on={a.id:[mandatory[a.id][t]]*n for a in assets if a.technology=='thermal'},commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=rows['assets'],rtbm=True,res_forecasts={a.id:[forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
         result['system_prediction']=dict(predictions[0],measurement_index=measurement_index)
         return result
@@ -211,7 +216,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         if interval.local.hour==11 and interval.local.minute==0:
             projected=deepcopy(state);trace=[]
             for future in rtus[i:i+12]:
-                r=clear_one(future,projected,effective[future.period],previous,i-1 if i else None);_advance(controllable,projected,r['assets'],5)
+                r=clear_one(future,projected,effective[future.period],previous,i-1 if i else None,projection=True);_advance(controllable,projected,r['assets'],5)
                 trace.append(deepcopy(projected))
             second=plan(24,projected);second.update(id='ISP_1100',cutoff=interval.start.isoformat(),first_period=24,
                 effective_at=periods[24].start.isoformat(),observed_state=deepcopy(state),forecast_noon_state=deepcopy(projected),forecast_bridge=trace)
@@ -394,9 +399,11 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                 prior[a.id]=dict(power_mw=x['end_mw'])
     ending={a.id:(dict(power_mw=state[a.id]['power_mw'],soc_mwh=state[a.id]['soc_mwh']) if a.technology=='storage' else
         dict(stage=state[a.id]['stage'],power_mw=state[a.id]['power_mw'],time_in_stage_minutes=state[a.id]['duration_minutes'])) for a in controllable}
+    if storage_terminal_soc_mwh is not None:
+        checks['storage_realized_terminal_soc']=all(abs(ending[aid]['soc_mwh']-target)<=1e-5 for aid,target in storage_terminal_soc_mwh.items())
     participant_results={p:{'central_cash_eur':str(sum((v for k,v in ledger.balances().items() if k.startswith('participant:'+p+':') and not k.endswith(':private')),D(0))),
                             'private_cash_eur':str(ledger.balances().get('participant:'+p+':private',D(0)))} for p in participants}
-    manifest=dict(library_version='0.3.1',ruleset=rules,parameter_id=parameters['id'],day=str(day),
+    manifest=dict(library_version='0.3.2',ruleset=rules,parameter_id=parameters['id'],day=str(day),
         runtime=dict(python=platform.python_version(),pulp=lp.__version__,solver='HiGHS' if lp.HiGHS().available() else 'CBC'),
         scope='daily_accrual',excluded_uplifts=['UA-3','UA-4','UA-5','UA-6','UA-7'],current_rules_conformance_verified=False,synthetic_parameters=parameters.get('synthetic',False),
         physical_model='ISP_MTU_average_dispatch_and_30_second_RTBM_trajectories',
@@ -421,7 +428,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     inputs=dict(time_index=[t.isoformat() for t in index],participants=[asdict(p) for p in participants.values()],
         assets=[dict(id=a.id,participant=a.participant,technology=a.technology,parameters=deepcopy(a.parameters),
             strategy=asdict(a.strategy),initial_state=asdict(a.initial_state) if a.initial_state is not None else None) for a in assets],
-        must_run=must_run,forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
+        storage_terminal_soc_mwh=deepcopy(storage_terminal_soc_mwh),must_run=must_run,forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
         system_forecast_mw=tso_rtu,system_observation_mw=observed_rtu,
         previous_system_observation=deepcopy(previous_system_observation),
         storage_bid_profiles_mwh={k:{'buy':v[0],'sell':v[1]} for k,v in profiles.items()},

@@ -1,20 +1,26 @@
 """Persist analytical regression evidence, including the active solver backend."""
-import contextlib,io,json,platform,unittest
+import contextlib,io,json,platform,unittest,sys,argparse
 from pathlib import Path
+PROJECT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(PROJECT))
 from emst import optimization
 
 
 def main():
     project=Path(__file__).resolve().parents[1]
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output",type=Path,default=project/"output")
+    args=parser.parse_args()
     suite=unittest.defaultTestLoader.discover(str(project/"tests"))
+    collection_errors=list(unittest.defaultTestLoader.errors)
     log=io.StringIO()
     with contextlib.redirect_stdout(log),contextlib.redirect_stderr(log):
         result=unittest.TextTestRunner(stream=log,verbosity=2).run(suite)
     backend="highs" if optimization.highspy is not None else "cbc"
     summary=dict(passed=result.wasSuccessful(),tests=result.testsRun,skipped=len(result.skipped),failures=len(result.failures),
-                 errors=len(result.errors),backend=backend,python=platform.python_version())
-    output=project/"output"
-    output.mkdir(exist_ok=True)
+                 errors=len(result.errors),collection_errors=collection_errors,actual_test_methods=result.testsRun-len(collection_errors),backend=backend,python=platform.python_version())
+    output=args.output
+    output.mkdir(parents=True,exist_ok=True)
     (output/f"unit-tests-{backend}.json").write_text(json.dumps(summary,indent=2))
     (output/f"unit-tests-{backend}.log").write_text(log.getvalue())
     print(json.dumps(summary,indent=2))

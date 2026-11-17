@@ -37,6 +37,7 @@ class Participant:
     brp: str | None=None
     clearing_member: str | None=None
     strategies: dict=field(default_factory=dict)
+    economic_owner: str | None=None
 
 
 @dataclass
@@ -64,6 +65,12 @@ class MarketResults:
     participant_results: dict
     audit: dict
     inputs: dict=field(default_factory=dict)
+    diagnostics: dict=field(default_factory=dict)
+    economics: dict=field(default_factory=dict)
+
+    def to_evaluation(self):
+        from .evaluation import evaluation_result
+        return evaluation_result(self)
 
     def save(self,directory):
         path=Path(directory);path.mkdir(parents=True,exist_ok=True)
@@ -91,7 +98,9 @@ class Market:
     Forecast and actual RES/load values are MW. Storage bid profiles are MWh per
     MTU. Positive storage power is injection, negative power is withdrawal.
     """
-    def __init__(self,ruleset="cyprus_isolated_v1",*,settlement_parameters=None):
+    def __init__(self,ruleset="cyprus_isolated_v1",*,settlement_parameters=None,solver_config=None):
+        from .solver import configuration
+        self.solver_config=configuration(solver_config)
         from .history import synthetic_tariffs
         self.ruleset=Ruleset(ruleset);self.participants={};self.assets={};self.forwards=[]
         self.settlement_parameters=deepcopy(settlement_parameters) if settlement_parameters is not None else dict(
@@ -106,9 +115,10 @@ class Market:
     @staticmethod
     def available_strategies():return deepcopy(STRATEGIES)
 
-    def add_participant(self,participant=None,*,id=None,brp=None,clearing_member=None,strategies=None):
-        p=deepcopy(participant) if isinstance(participant,Participant) else Participant(id or participant,brp,clearing_member,deepcopy(strategies or {}))
+    def add_participant(self,participant=None,*,id=None,brp=None,clearing_member=None,strategies=None,economic_owner=None):
+        p=deepcopy(participant) if isinstance(participant,Participant) else Participant(id or participant,brp,clearing_member,deepcopy(strategies or {}),economic_owner)
         if not isinstance(p.id,str) or not p.id or ':' in p.id or p.id in self.participants:raise ValueError("Participant ID must be nonempty, unique and contain no colon")
+        if p.economic_owner is not None and (not isinstance(p.economic_owner,str) or not p.economic_owner):raise ValueError('economic_owner must be a nonempty string')
         if set(p.strategies)-set(STRATEGIES):raise ValueError('Unknown technology in participant strategies')
         for technology,value in p.strategies.items():make_strategy(value,technology)
         self.participants[p.id]=p
@@ -180,6 +190,7 @@ class Market:
         if reserve_cost<0 or degradation_cost<0:raise ValueError("Negative storage cost")
         selected=self._strategy(participant,'storage',strategy,strategy_parameters)
         values=selected.parameters
+        if values.get('terminal_soc_mwh',state.soc_mwh)>capacity_mwh:raise ValueError('Strategy terminal SOC exceeds storage capacity')
         if float(values.get('balancing_up_price',100))<float(values.get('balancing_down_price',0)):
             raise ValueError('Storage upward offer price must not be below its downward price')
         return self._add(id,participant,"storage",selected,dict(
@@ -207,11 +218,31 @@ class Market:
 
     def run(self,*,time_index,reserve_requirements=None,price_forecast=None,historical_rtbm_prices=None,price_ranges=False,accounting_cycles=False,
             system_forecasts=None,system_observations=None,previous_system_observation=None,
-            must_run_requirement_mw=None,must_run_supplier_shares=None):
+            must_run_requirement_mw=None,must_run_supplier_shares=None,actual_balance_tolerance_mwh=1e-6,
+            storage_terminal_soc_mwh=None):
         if accounting_cycles:raise NotImplementedError("The generic participant API currently runs daily settlement; full historical accounting remains available through emst.runner")
         from .market_engine import run_market
-        return run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
-            system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares)
+        from .solver import session
+        from .evaluation import enrich,residuals
+        residuals([],actual_balance_tolerance_mwh)
+        for asset in self.assets.values():asset.strategy.validate(asset.technology)
+        with session(self.solver_config) as context:
+            result=run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
+                system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares,
+                storage_terminal_soc_mwh)
+        return enrich(result,self,context['records'],actual_balance_tolerance_mwh)
+
+    def evaluate(self,**inputs):
+        """JSON-safe success/failure contract; numerical failures are never economic penalties."""
+        from .solver import SolveError
+        try:return self.run(**inputs).to_evaluation()
+        except (ValueError,TypeError,NotImplementedError,SolveError,RuntimeError) as error:
+            kind='unsupported_feature' if isinstance(error,NotImplementedError) else 'invalid_input' if isinstance(error,(ValueError,TypeError)) else 'model_or_numerical_failure'
+            if isinstance(error,SolveError):
+                kind={'time_limit':'solver_limit','iteration_limit':'solver_limit','solver_limit':'solver_limit',
+                    'infeasible':'optimization_infeasible','unbounded':'optimization_unbounded'}.get(error.record['termination_reason'],'solver_failure')
+            return dict(schema_version='1.0',status='failed',failure=dict(kind=kind,message=str(error),
+                solve_record=error.record if isinstance(error,SolveError) else None))
 
     def run_period(self,*,start,end,scenario,checkpoint_directory,resume_from=None,must_run_auction_frequency="monthly"):
         """Run inclusive consecutive dates; see docs/multi-day.md."""

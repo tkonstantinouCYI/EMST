@@ -1,5 +1,7 @@
 """Checked CBC solves and joint optimal-dual-face pricing for minimisation LPs."""
 import pulp as lp
+import math,time
+from . import solver as control
 try:
     import highspy
 except ImportError:
@@ -9,13 +11,62 @@ EPS = 1e-6
 
 
 def solve(problem, mip=True):
-    backend = (lp.HiGHS(msg=False,mip=mip,gapRel=0,threads=1,timeLimit=90)
-               if highspy is not None else
-               lp.PULP_CBC_CMD(msg=False,mip=mip,gapRel=0,threads=1,timeLimit=90))
-    status = problem.solve(backend)
-    if status != lp.LpStatusOptimal or problem.sol_status != lp.LpSolutionOptimal:
-        raise RuntimeError(f"{problem.name}: {lp.LpStatus[status]}")
-    return float(lp.value(problem.objective) or 0)
+    stage=control.stage_name(problem);options=control.options(stage)
+    backend_name=options['backend']
+    if backend_name=='auto':backend_name='highs' if highspy is not None else 'cbc'
+    if backend_name=='highs' and highspy is None:raise ValueError('HiGHS backend requested but highspy is not installed')
+    backend_class=lp.HiGHS if backend_name=='highs' else lp.PULP_CBC_CMD
+    backend=backend_class(msg=options['logging'],mip=mip,gapRel=options['relative_gap'] if mip else 0,
+        gapAbs=options['absolute_gap'] if mip else 0,threads=options['threads'],timeLimit=options['time_limit_seconds'])
+    started=time.perf_counter();failure=None
+    try:status=problem.solve(backend)
+    except (lp.PulpSolverError,RuntimeError) as error:
+        status=lp.LpStatusUndefined;failure=str(error)
+    native=getattr(problem,'solverModel',None) if backend_name=='highs' else None
+    native_status=str(native.getModelStatus()) if native is not None else None
+    info=native.getInfo() if native is not None else None
+    objective=lp.value(problem.objective)
+    objective=float(objective) if objective is not None and math.isfinite(objective) else None
+    optimal=(failure is None and status==lp.LpStatusOptimal and problem.sol_status==lp.LpSolutionOptimal)
+    native_optimal=native_status is None or native_status.endswith('.kOptimal')
+    reason='optimal' if optimal and native_optimal else 'unknown'
+    if native_status and 'TimeLimit' in native_status:reason='time_limit'
+    elif native_status and 'IterationLimit' in native_status:reason='iteration_limit'
+    elif status==lp.LpStatusInfeasible:reason='infeasible'
+    elif status==lp.LpStatusUnbounded:reason='unbounded'
+    elif failure:reason='solver_error'
+    elif optimal and not native_optimal:reason='solver_limit'
+    elif not optimal:reason='not_optimal'
+    def finite(value):return float(value) if value is not None and math.isfinite(value) else None
+    bound=finite(getattr(info,'mip_dual_bound',None)) if mip else None
+    if bound is not None:bound+=float(problem.objective.constant)
+    incumbent=(bool(native.getSolution().value_valid) if native is not None else problem.sol_status in (lp.LpSolutionOptimal,lp.LpSolutionIntegerFeasible))
+    record=dict(**control.details(),stage=stage,purpose=control.solve_purpose(mip),problem=problem.name,
+        backend=backend_name,backend_version=highspy.Highs().version() if backend_name=='highs' else 'bundled_CBC',
+        effective_options=options,status=lp.LpStatus.get(status,'Undefined'),native_status=native_status,
+        solution_status=lp.LpSolution.get(problem.sol_status,'Unknown'),
+        incumbent_available=incumbent,
+        objective=objective if incumbent else None,best_bound=bound,
+        gap=finite(getattr(info,'mip_gap',None)) if mip else None,
+        wall_seconds=time.perf_counter()-started,termination_reason=reason,error=failure)
+    control.record(record)
+    # Time-limited incumbents never opt in to settlement; configured gap criteria still require optimal termination.
+    if reason!='optimal':raise control.SolveError(record)
+    return objective or 0.
+
+
+def primal_violation(variables,constraints):
+    violation=0.
+    for v in variables:
+        value=v.varValue
+        if value is None or not math.isfinite(value):return float('inf')
+        if v.lowBound is not None:violation=max(violation,v.lowBound-value)
+        if v.upBound is not None:violation=max(violation,value-v.upBound)
+    for c in constraints:
+        value=c.value()
+        if value is None or not math.isfinite(value):return float('inf')
+        violation=max(violation,abs(value) if c.sense==0 else -value if c.sense==1 else value)
+    return violation
 
 
 def freeze_discrete(problem):
@@ -89,7 +140,7 @@ def dual_face(problem, names, ranges=True, extra=None, select=True):
     face += dual_objective == optimum, "strong_duality"
     if extra:
         extra(face, dual)
-    native = NativeFace(face) if highspy is not None else None
+    native = NativeFace(face) if highspy is not None and control.options('diagnostic')['backend']!='cbc' else None
     bounds = {}
     for position,name in enumerate(names):
         if ranges:
@@ -159,8 +210,9 @@ class NativeFace:
             start.append(len(indices))
         model.a_matrix_.format_=highspy.MatrixFormat.kColwise
         model.a_matrix_.start_=start;model.a_matrix_.index_=indices;model.a_matrix_.value_=values
+        self.options=control.options('diagnostic')
         self.solver=highspy.Highs()
-        for k,v in {"output_flag":False,"threads":1,"time_limit":90.,
+        for k,v in {"output_flag":self.options["logging"],"threads":self.options["threads"],"time_limit":self.options["time_limit_seconds"],
                     "primal_feasibility_tolerance":1e-8,"dual_feasibility_tolerance":1e-8}.items():
             self.solver.setOptionValue(k,v)
         self.solver.passModel(model)
@@ -175,10 +227,18 @@ class NativeFace:
         # HiGHS retains cumulative run time when this model is warm-started.
         # Give each range/selection solve its own 90-second budget, rather than
         # timing out the complete batch after 90 seconds of successful solves.
-        self.solver.setOptionValue("time_limit",self.solver.getRunTime()+90.)
+        self.solver.setOptionValue("time_limit",self.solver.getRunTime()+self.options["time_limit_seconds"])
+        started=time.perf_counter()
         self.solver.run()
+        status=self.solver.getModelStatus()
+        diagnostic_record=dict(**control.details(),stage='diagnostic',purpose='dual_face_range_or_selection',problem='optimal_dual_face',
+            backend='highs',backend_version=self.solver.version(),effective_options=self.options,
+            status=str(status),termination_reason='optimal' if status==highspy.HighsModelStatus.kOptimal else 'not_optimal',
+            wall_seconds=time.perf_counter()-started)
+        if 'TimeLimit' in str(status):diagnostic_record['termination_reason']='time_limit'
+        control.record(diagnostic_record)
         if self.solver.getModelStatus()!=highspy.HighsModelStatus.kOptimal:
-            raise RuntimeError(f"Dual-face range failed: {self.solver.getModelStatus()}")
+            raise control.SolveError(diagnostic_record)
         return self.solver.getSolution().col_value[index]
 
     def fix(self,variable,value):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emst-cyprus"
-version = "0.3.1"
+version = "0.3.2"
 description = "Isolated Cyprus electricity market simulation and auditable settlement"
 readme = "README.md"
 requires-python = ">=3.11"

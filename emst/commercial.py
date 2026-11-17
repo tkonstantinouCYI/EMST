@@ -3,6 +3,7 @@ from itertools import product
 import math
 import pulp as lp
 from .optimization import solve, dual_face
+from .solver import stage
 
 
 def forward_schedules(contracts, registrations, units, count):
@@ -44,6 +45,7 @@ def forward_schedules(contracts, registrations, units, count):
     return schedules, cash_known
 
 
+@stage('DAM')
 def clear_dam(orders, count, floor=0, cap=1000,capacity_margins=None):
     """Enumerate discrete block regimes, solve each continuous welfare problem.
 

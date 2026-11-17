@@ -32,7 +32,7 @@ def _atomic(path,value):
 
 
 def _configuration(market):
-    return dict(rules=market.ruleset.to_dict(),parameters=market.settlement_parameters,
+    return dict(rules=market.ruleset.to_dict(),parameters=market.settlement_parameters,solver_config=market.solver_config,
         participants=[asdict(p) for p in market.participants.values()],
         assets=[dict(id=a.id,participant=a.participant,technology=a.technology,
             parameters=a.parameters,strategy=asdict(a.strategy),
@@ -131,7 +131,7 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
     series_assets={a.id for a in market.assets.values() if a.technology in ('res','supplier')}
     allowed={'forecasts','actuals','forwards','reserve_requirements','price_forecast',
         'historical_rtbm_prices','price_ranges','system_forecasts','system_observations',
-        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares'}
+        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh'}
     for day in dates:
         if day not in daily:raise ValueError(f'Missing scenario for {day}')
         data=daily[day]
@@ -155,15 +155,17 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
             month_dates=[first.replace(day=d) for d in range(1,monthrange(first.year,first.month)[1]+1)]
             if any(d not in daily or daily[d].get('must_run_requirement_mw') is None for d in month_dates):
                 raise ValueError('Monthly must-run auction requires requirements and forecasts for the complete month before clearing; use daily frequency for partial studies')
-            awards=clear_auction(market,{str(d):daily[d]['must_run_requirement_mw'] for d in month_dates},
-                frequency='monthly',auction_id='monthly:'+month)
+            from .solver import session as solver_session
+            with solver_session(market.solver_config) as procurement_context:
+                awards=clear_auction(market,{str(d):daily[d]['must_run_requirement_mw'] for d in month_dates},
+                    frequency='monthly',auction_id='monthly:'+month)
             from .series import mw_values
             forecasts={a.id:[v for d in month_dates for v in mw_values(daily[d]['forecasts'][a.id],market.time_index(d),a.id+' monthly forecast')]
                 for a in market.assets.values() if a.technology=='supplier'}
             supplied=[daily[d].get('must_run_supplier_shares') for d in month_dates]
             if any(v!=supplied[0] for v in supplied):raise ValueError('Monthly must-run supplier shares must be constant throughout the month')
             shares=supplier_weights(market,forecasts,supplied[0])
-            state['must_run_auctions'][month]=dict(awards=awards,supplier_shares=shares,
+            state['must_run_auctions'][month]=dict(awards=awards,supplier_shares=shares,solve_records=procurement_context['records'],
                 share_source='supplied' if supplied[0] is not None else 'monthly_forecast_consumption')
     working=deepcopy(market)
     for day in dates:
@@ -174,7 +176,9 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
             if data.get('must_run_requirement_mw') is None:raise ValueError('Cannot omit a precleared monthly must-run requirement')
             working._must_run_award=deepcopy(procurement['awards'][str(day)])
             working._must_run_award['supplier_share_source']=procurement['share_source']
-            if data.get('must_run_supplier_shares') is not None and data['must_run_supplier_shares']!=procurement['supplier_shares']:
+            candidate_shares=data.get('must_run_supplier_shares')
+            if candidate_shares is not None:candidate_shares=supplier_weights(market,{a.id:[] for a in market.assets.values() if a.technology=='supplier'},candidate_shares)
+            if candidate_shares is not None and candidate_shares!=procurement['supplier_shares']:
                 raise ValueError('Cannot change precleared monthly supplier shares')
             data['must_run_supplier_shares']=procurement['supplier_shares']
         for a in working.assets.values():
@@ -197,6 +201,10 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
         history={t:([r['prices'][t*6:t*6+6] for r in past]+
             ([] if len(past)==3 else (seed.get(t,seed.get(str(t))))[len(past):])) for t in range(48)}
         result=working.run(time_index=market.time_index(day),historical_rtbm_prices=history,**data)
+        result.manifest['execution_mode']='chronological_daily_horizons'
+        if procurement is not None:
+            result.diagnostics['monthly_procurement']=dict(auction_id=working._must_run_award['auction_id'],
+                solve_records=deepcopy(procurement.get('solve_records',[])),count_once_per_auction_id=True)
         if not result.audit['passed']:raise RuntimeError(f'Daily audit failed for {day}; no checkpoint committed')
         target=root/str(day)/'result.json'
         _atomic(target,asdict(result))
