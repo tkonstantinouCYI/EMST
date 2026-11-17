@@ -7,4 +7,6 @@ from .model import Forward
 from .solver import SolveError
 from .multiday import PeriodResults
 
-__all__=["Market","MarketResults","PeriodResults","Participant","ThermalState","StorageState","Ruleset","Strategy","Forward","SolveError"]
+__all__=["Market","MarketResults","PeriodResults","Participant","ThermalState","PlantState","StorageState","Ruleset","Strategy","Forward","SolveError"]
+
+from .configurations import PlantState

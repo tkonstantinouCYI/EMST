@@ -368,3 +368,10 @@ Storage now explicitly excludes simultaneous upward/downward activation per
 asset and interval in both ISP and RTBM, including equal-price offers. This is
 separate from physical charging/discharging exclusivity. See
 [formulation and benchmark procedure](storage-activation.md).
+
+Configured thermal plants use the existing thermal `marginal_cost` or
+`fixed_markup` strategy at the single plant identity; no new strategy name is
+introduced. Their base cost is the lowest operating configuration marginal cost,
+with an optional `dam_price` convenience override. ISP/RTBM include the selected
+configuration/transition operating-cost adjustment. See
+[configured plants](configured-plants.md) for the input and cost conventions.

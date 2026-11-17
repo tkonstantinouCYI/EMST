@@ -583,3 +583,14 @@ participant inputs. The noon ISP bridge still cannot read future actuals.
 See [RTBM resolution](rtbm-resolution.md) for the information assumptions and
 comparison limits. The forecast-error and physical-trajectory descriptions above
 apply to the default five-minute RTBM.
+
+## Configuration-based thermal plants
+
+`Market.add_configured_thermal(id, participant, *, components, configurations,
+transitions, initial_state, dam_price=None, energy_up_price=None,
+energy_down_price=None, reserve_cost=2., reserve_prices=None, strategy=None,
+strategy_parameters=None)` registers one thermal market asset with internal
+mutually exclusive configurations. `PlantState` carries configuration, power,
+component histories and an optional unfinished transition. Existing
+`add_thermal()` and `ThermalState` remain unchanged.
+See [the full input schema and settlement conventions](configured-plants.md).

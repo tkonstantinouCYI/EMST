@@ -95,6 +95,8 @@ def _asset_interval(row, asset, timestamp):
                            ('phase', 'thermal_stage'), ('actual_mwh', 'actual_energy_mwh')):
         if source in row:
             fields[target] = row[source]
+    for key in ('configuration','configuration_state','configuration_binaries','configuration_transition','online_components','transition_cost_eur','configuration_operating_adjustment_eur','configuration_endpoint_mw'):
+        if key in row:fields[key]=deepcopy(row[key])
     return fields
 
 

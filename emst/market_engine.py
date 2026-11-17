@@ -15,6 +15,7 @@ from .phases import canonical,boundary_state,check_rows
 from .commercial import clear_dam
 from .dispatch import dispatch
 from .optimization import solve
+from . import configurations as config
 from .settlement import Ledger,D,production_bridge,res_bridge,offtake_bridge,instructed_cash,period_price
 from .accounting import post_tariffs,period_recovery
 
@@ -57,7 +58,8 @@ def _advance(assets,state,rows,minutes):
     for a in assets:
         if a.id not in rows:continue
         r=rows[a.id];old=state[a.id]
-        if a.technology=='storage':state[a.id]=dict(power_mw=r['power_mw'],soc_mwh=r['soc_mwh'])
+        if config.configured(a):state[a.id]=config.advance(a,old,r,minutes)
+        elif a.technology=='storage':state[a.id]=dict(power_mw=r['power_mw'],soc_mwh=r['soc_mwh'])
         else:
             stage=r['phase'];age=old['duration_minutes']+minutes if canonical(old['stage'])==stage else minutes
             stage,age=boundary_state(stage,age,a.parameters['phase_profiles_mw'])
@@ -182,7 +184,8 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     state={}
     for a in assets:
         if a.technology=='thermal':
-            v=a.initial_state;state[a.id]=dict(stage=v.stage,on=int(v.stage!='offline'),power_mw=v.power_mw,duration_minutes=v.time_in_stage_minutes)
+            v=a.initial_state
+            state[a.id]=config.boundary(config.initial_state(a.parameters['plant_configurations'],v)) if config.configured(a) else dict(stage=v.stage,on=int(v.stage!='offline'),power_mw=v.power_mw,duration_minutes=v.time_in_stage_minutes)
         elif a.technology=='storage':state[a.id]=asdict(a.initial_state)
     controllable=[a for a in assets if a.technology in ('thermal','storage')]
     load=[sum(forecast[a.id][t] for a in assets if a.technology=='supplier') for t in range(48)]
@@ -334,6 +337,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         if rules['settlement']['pay_instructed_startups']:
             for a in controllable:
                 if a.technology!='thermal':continue
+                if config.configured(a):continue
                 starts=sum(r['assets'][a.id]['start'] for r in batch)
                 if starts:ledger.post(f'startup:{a.id}:{t}','S13',f'participant:{a.participant}:nonDAM','A-C',starts,a.parameters['startup_cost'],period.id,'13.5.2.6','instructed_start')
         for a in controllable:
@@ -386,11 +390,12 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
             if a.technology!='thermal':continue
             rows=[r['assets'][a.id] for r in run['rows']]
             initial=run['initial_state'][a.id]
-            checks['thermal_four_phase_constraints'] &= all(check_rows(rows,initial['stage'],initial['duration_minutes'],a.parameters['phase_profiles_mw'],a.parameters['minimum_mw'],initial['power_mw']).values())
+            if not config.configured(a):checks['thermal_four_phase_constraints'] &= all(check_rows(rows,initial['stage'],initial['duration_minutes'],a.parameters['phase_profiles_mw'],a.parameters['minimum_mw'],initial['power_mw']).values())
             checks['thermal_power_from_market_schedule_and_energy'] &= all(abs(r['power_mw']-(run['commercial_mwh'][a.id][j]+r['up_mwh']-r['down_mwh'])/.5)<1e-5 for j,r in enumerate(rows))
     checks['ISP_average_power_ramps']=True
     for run in runs:
         for asset in controllable:
+            if config.configured(asset):continue
             previous=run['initial_state'][asset.id]['power_mw']
             for row in run['rows']:
                 power=row['assets'][asset.id]['power_mw']
@@ -410,7 +415,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         if i:checks['latest_observed_error'] &= datetime.fromisoformat(rtbm[i-1]['system_observation_available_at'])<=datetime.fromisoformat(r['at'])
     prior={a.id:deepcopy(asdict(a.initial_state)) for a in controllable}
     if rtbm_interval_minutes==30:
-        checks['immediate_RTBM_power']=all(abs(x['end_mw']-x['power_mw'])<1e-6 and all(abs(v-x['power_mw'])<1e-6 for v in x['nodes_mw']) for r in rtbm for a in controllable if a.technology=='thermal' for x in [r['assets'][a.id]])
+        checks['immediate_RTBM_power']=all(abs(x['end_mw']-x['power_mw'])<1e-6 and all(abs(v-x['power_mw'])<1e-6 for v in x['nodes_mw']) for r in rtbm for a in controllable if a.technology=='thermal' for x in [r['assets'][a.id]] if not x.get('configuration_transition'))
     checks['intertemporal_power_ramps']=True;checks['storage_SOC_bridge']=True;checks['physical_power_limits']=True;checks['thermal_energy_integrals']=True
     for r in rtbm:
         for a in controllable:
@@ -426,7 +431,12 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
                 checks['thermal_energy_integrals'] &= abs(integral-x['energy_mwh'])<1e-6
                 checks['physical_power_limits'] &= all(-1e-5<=y<=p['capacity_mw']+1e-5 for y in nodes[1:])
                 prior[a.id]=dict(power_mw=x['end_mw'])
+    for a in controllable:
+        if config.configured(a):
+            checks['configuration_ISP_'+a.id]=all(config.check_rows(a,run['initial_state'][a.id],[dict(row['assets'][a.id],hours=row['hours']) for row in run['rows']]) for run in runs)
+            checks['configuration_RTBM_'+a.id]=config.check_rows(a,config.boundary(a.initial_state),[dict(row['assets'][a.id],hours=row['hours']) for row in rtbm])
     ending={a.id:(dict(power_mw=state[a.id]['power_mw'],soc_mwh=state[a.id]['soc_mwh']) if a.technology=='storage' else
+        dict(configuration=state[a.id]['configuration'],power_mw=state[a.id]['power_mw'],component_histories=deepcopy(state[a.id]['component_histories']),transition=deepcopy(state[a.id]['transition'])) if config.configured(a) else
         dict(stage=state[a.id]['stage'],power_mw=state[a.id]['power_mw'],time_in_stage_minutes=state[a.id]['duration_minutes'])) for a in controllable}
     if storage_terminal_soc_mwh is not None:
         checks['storage_realized_terminal_soc']=all(abs(ending[aid]['soc_mwh']-target)<=1e-5 for aid,target in storage_terminal_soc_mwh.items())

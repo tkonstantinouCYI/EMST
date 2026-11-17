@@ -179,6 +179,34 @@ class Market:
             phase_profiles_mw=phase_map,must_run_participation=must_run_participation,
             must_run_offer_eur_per_mtu=must_run_offer_eur_per_mtu),state)
 
+    def add_configured_thermal(self,id,participant,*,components,configurations,transitions,
+            initial_state,dam_price=None,energy_up_price=None,energy_down_price=None,
+            reserve_cost=2.,reserve_prices=None,strategy=None,strategy_parameters=None):
+        """Register one plant; configuration alternatives are internal, never assets.
+
+        Transition profiles and component membership are explicit half-hour steps.
+        Simple DAM orders use the plant maximum and dam_price (default: lowest
+        operating configuration marginal cost). Configuration costs affect ISP.
+        """
+        from .configurations import validate
+        data,state=validate(components,configurations,transitions,initial_state)
+        configs=list(data['configurations'].values());operating=[c for name,c in data['configurations'].items() if name!='OFF']
+        if not operating:raise ValueError('At least one operating configuration is required')
+        base=min(c['marginal_cost'] for c in operating)
+        if dam_price is not None:
+            if strategy is not None or strategy_parameters:raise ValueError('Choose dam_price or a thermal strategy')
+            strategy='fixed_markup';strategy_parameters={'markup_eur_mwh':float(dam_price)-base}
+        # Use the normal registration checks and common plant-level market API.
+        placeholder=ThermalState('offline',0,0)
+        a=self.add_thermal(id,participant,capacity_mw=max(c['maximum_mw'] for c in configs),
+            minimum_mw=0,marginal_cost=base,initial_state=placeholder,
+            minimum_up_minutes=0,minimum_down_minutes=0,ramp_mw_hour=max(c['ramp_mw_hour'] for c in configs),
+            reserve_limit_mw=max(c['reserve_limit_mw'] for c in configs),reserve_cost=reserve_cost,
+            energy_up_price=energy_up_price,energy_down_price=energy_down_price,reserve_prices=reserve_prices,
+            strategy=strategy,strategy_parameters=strategy_parameters)
+        a.parameters['plant_configurations']=data;a.initial_state=state
+        return a
+
     def add_storage(self,id,participant,*,power_mw,capacity_mwh,initial_state,efficiency_charge=.95,
                     efficiency_discharge=.95,ramp_mw_hour=10000.,reserve_cost=1.,degradation_cost=0.,
                     strategy=None,strategy_parameters=None,reserve_prices=None):

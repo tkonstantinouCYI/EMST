@@ -193,7 +193,8 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
             if a.id in series_assets:
                 a.forecast=data['forecasts'][a.id];a.actual=data['actuals'][a.id]
             if a.id in state['ending_states']:
-                cls=ThermalState if a.technology=='thermal' else StorageState
+                from .configurations import PlantState,configured
+                cls=PlantState if configured(a) else ThermalState if a.technology=='thermal' else StorageState
                 a.initial_state=cls(**state['ending_states'][a.id])
         working.forwards=deepcopy(data.pop('forwards',market.forwards))
         data.pop('forecasts');data.pop('actuals')

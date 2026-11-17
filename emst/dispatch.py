@@ -6,6 +6,7 @@ from .optimization import solve,freeze_discrete,dual_face,primal_violation
 from .solver import stage,purpose,SolveError
 from .model import PRODUCTS,UP,DOWN,RESPONSE_HOURS
 from .physics import thermal_path
+from . import configurations as config
 from .offers import asset_energy_prices
 from .relaxation import build as build_slacks,quantities as slack_quantities,used as slack_used
 from .phases import build as build_phases,bind_average_power,row_phase,canonical,PHASES
@@ -21,9 +22,23 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
     shortage,surplus,reserve_shortage,slack_costs=build_slacks(intervals,rules.get('slack'),include_capacity=not rtbm)
     curt={j:0 for j in range(len(intervals))};res_base={};res_available={};commercial_curt={j:0. for j in range(len(intervals))}
     rb=rules['storage'];capacity=rb['participation_balancing_capacity'];energy=rb['participation_balancing_energy']
-    phase_data={};fixed_phases={}
+    phase_data={};fixed_phases={};configuration_data={}
     for i,a in enumerate(thermal):
         v=a.parameters;initial=states[a.id];initial_phase=canonical(initial['stage'])
+        if config.configured(a):
+            for j,t in enumerate(intervals):
+                k=a.id,j
+                up[k]=lp.LpVariable(f'plant_up_{i}_{j}',0);down[k]=lp.LpVariable(f'plant_down_{i}_{j}',0)
+                p[k]=(commercial[a.id][j]+up[k]-down[k])/t.hours
+                offer_up,offer_down=asset_energy_prices(a,rules)
+                if rtbm:
+                    bid=a.strategy.price('thermal',v['marginal_cost'],rules);penalty=rules['schedule_deviation_cost_eur_mwh']
+                    offer_up,offer_down=bid+penalty,bid-penalty
+                terms.extend([offer_up*up[k],-offer_down*down[k]])
+            configuration_data[a.id]=config.build(m,a,initial,intervals,p,end,paths,on,start,stop,reserve,terms,commercial[a.id],rules,
+                rtbm=rtbm,reference=(reference or {}).get(a.id),immediate=immediate_ramping,
+                mandatory=(mandatory_on or {}).get(a.id,[0]*len(intervals)))
+            continue
         if rtbm:
             phase=reference[a.id].get('phase','dispatch' if commitment[a.id] else 'offline')
             fixed_phases[a.id]=phase
@@ -252,13 +267,19 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 if raw_soc < -1e-7 or raw_soc > limit+1e-7:raise RuntimeError('Storage SOC violates its physical bounds')
                 row['soc_mwh']=max(0.,min(limit,raw_soc))  # Keep boundary states valid within LP feasibility precision.
             if a.technology=='thermal':
-                if rtbm:
+                if config.configured(a):
+                    row.update(config.row(configuration_data[a.id],j,a,t,rtbm))
+                    row['configuration_endpoint_mw']=float(lp.value(end[a.id,j]))
+                    cost_delta=row['effective_marginal_cost']-a.parameters['marginal_cost']
+                    row['up_offer_eur_mwh']+=cost_delta;row['down_offer_eur_mwh']+=cost_delta
+                elif rtbm:
                     phase=fixed_phases[a.id];flags={q:int(phase==q) for q in PHASES}
                     age=states[a.id]['duration_minutes'] if canonical(states[a.id]['stage'])==phase else 0
                     age+=j*t.minutes
                 else:phase,flags,age=row_phase(phase_data[a.id],j)
-                row.update(phase=phase,phase_binaries=flags,phase_elapsed_before_minutes=age,
-                    startup_cost_eur=lp.value(start[a.id,j])*a.parameters['startup_cost'])
+                if not config.configured(a):
+                    row.update(phase=phase,phase_binaries=flags,phase_elapsed_before_minutes=age,
+                        startup_cost_eur=lp.value(start[a.id,j])*a.parameters['startup_cost'])
                 if rtbm:
                     row.update(phase_initial_mw=float(lp.value(paths[a.id,j][0])),phase_terminal_mw=end[a.id,j].value())
             group[a.id]=row
@@ -273,8 +294,11 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
             energy_down_credit=sum(asset_energy_prices(a,rules)[1]*down[a.id,j].value() for a in thermal+storage+renewables for j in range(len(intervals))),
             reserve_capacity_cost=sum(reserve[a.id,j,x].value()*a.parameters.get('reserve_prices',{}).get(x,a.parameters['reserve_cost']) for a in thermal+storage for j in range(len(intervals)) for x in PRODUCTS),
             startup_cost=sum(lp.value(start[a.id,j])*a.parameters['startup_cost'] for a in thermal for j in range(len(intervals))))
+        if configuration_data:
+            objective_components['configuration_transition_cost']=sum(float(lp.value(v) or 0) for d in configuration_data.values() for v in d['transition_cost'].values())
+            objective_components['configuration_operating_adjustment']=sum(float(lp.value(v) or 0) for d in configuration_data.values() for v in d['operating_adjustment'].values())
         objective_components.update({k:float(lp.value(v)) for k,v in slack_costs.items()})
-        objective_components['total']=objective_components['energy_up_cost']-objective_components['energy_down_credit']+objective_components['reserve_capacity_cost']+objective_components['startup_cost']+sum(objective_components[k] for k in slack_costs)
+        objective_components['total']=objective_components['energy_up_cost']-objective_components['energy_down_credit']+objective_components['reserve_capacity_cost']+objective_components['startup_cost']+sum(objective_components[k] for k in slack_costs)+objective_components.get('configuration_transition_cost',0)+objective_components.get('configuration_operating_adjustment',0)
         if abs(objective_components['total']-fixed)>1e-3:raise RuntimeError('ISP offer objective reconciliation failed')
     return dict(solution_class="relaxed_with_slack" if slack_used([r["slack"] for r in rows]) else "feasible_without_slack",
                 smoothing=smoothing,objective_components_eur=objective_components,physical_security_feasible=not slack_used([r["slack"] for r in rows]),
@@ -284,5 +308,6 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 demand_mw=list(demand),res_available_mw=list(res),requirements_mw={} if rtbm else deepcopy(requirements),initial_state=deepcopy(states),
                 thermal_physics='RTBM_thermal_path' if rtbm else 'MTU_average_power_ramps',commercial_mwh=deepcopy(commercial),
                 storage_activation_formulation='separate_up_down_with_binary_exclusivity',storage_activation_binary_count=sum(name.startswith('storage_activation_mode_') for name in frozen),
-                thermal_state_binary_count=4*len(thermal)*len(intervals) if not rtbm else 0,
+                thermal_state_binary_count=(4*sum(not config.configured(a) for a in thermal)*len(intervals)+sum(len(d['z']) for d in configuration_data.values())) if not rtbm else 0,
+                **({'configuration_state_binary_count':sum(len(d['z']) for d in configuration_data.values()) if not rtbm else 0} if configuration_data else {}),
                 power_definition='(MS_mwh + energy_up_mwh - energy_down_mwh) / hours')

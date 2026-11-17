@@ -169,3 +169,9 @@ Three-day native bootstrap sets are averaged when initializing coarse history;
 coarse history is never expanded into fabricated five-minute prices. Monthly
 closure labels coarse results as a research approximation. See
 [the resolution guide](rtbm-resolution.md).
+
+Configuration-based plants carry `PlantState` rather than `ThermalState`:
+configuration, boundary power, every component's on/off duration, and unfinished
+transition ID/elapsed time. Both continuous execution and checkpoint/resume
+preserve these obligations; an active transition is not restarted at midnight.
+See [configured plants](configured-plants.md).

@@ -200,3 +200,8 @@ thermal response despite a restrictive ramp parameter, current RES inputs,
 no future-actual leakage into the noon ISP bridge, default/explicit five-minute
 equivalence, and exact checkpoint/resume equivalence in coarse mode. Evidence is
 in `output/rtbm-current-input-tests16/` and `output/rtbm-current-input-tests15/`.
+
+
+For [configuration-based plants](configured-plants.md), immediate ramping applies
+only within stable configurations. Explicit transition trajectories and durations
+remain binding in both RTBM modes, with their actual integrated interval energy.

@@ -261,3 +261,18 @@ labelled a **30-minute RTBM and settlement research approximation**. It does not
 produce artificial five-minute prices or use full-day perfect foresight. Dispatch,
 prices, cashflows and residuals can differ from native five-minute execution.
 See [inputs, timing/accuracy comparison and limitations](docs/rtbm-resolution.md).
+
+## Combined-cycle plant configurations
+
+Use `Market.add_configured_thermal()` for one physical plant with mutually
+exclusive operating configurations, explicit transition profiles/costs, and
+component minimum up/down histories. ISP selects the configuration; both RTBM
+modes follow it, including transitions crossing noon or midnight. Energy,
+reserves and settlement remain at plant level.
+
+```sh
+python examples/configured_plant.py --rtbm-interval-minutes 5 --output ccgt5
+python examples/configured_plant.py --rtbm-interval-minutes 30 --output ccgt30
+```
+
+See [configuration inputs, costs, settlement and limitations](docs/configured-plants.md).

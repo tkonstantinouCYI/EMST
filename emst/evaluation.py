@@ -62,16 +62,19 @@ def economics(result):
             p=asset['parameters'];technology=asset['technology'];intervals=[]
             for r in result.rtbm:
                 x=r['assets'].get(aid,{})
-                variable=(x.get('actual_mwh',0)*p['marginal_cost']) if technology=='thermal' else 0.
+                variable=(x.get('actual_mwh',0)*x.get('effective_marginal_cost',p['marginal_cost'])) if technology=='thermal' else 0.
+                transition=x.get('transition_cost_eur',0)
                 startup=x.get('start',0)*p.get('startup_cost',0)
-                no_load=x.get('on',0)*r['hours']*p.get('no_load_cost_per_hour',0)
+                no_load=x.get('on',0)*r['hours']*x.get('effective_no_load_cost_per_hour',p.get('no_load_cost_per_hour',0))
                 throughput=x.get('charge_mwh',0)+x.get('discharge_mwh',0)
                 degradation=throughput*p.get('degradation_cost',0)
                 intervals.append(dict(at=r['at'],period_index=r['period'],hours=r['hours'],
                     variable_cost_eur=variable,startup_cost_eur=startup,no_load_cost_eur=no_load,
                     throughput_mwh=throughput,degradation_cost_eur=degradation,
-                    total_operating_cost_eur=variable+startup+no_load+degradation))
+                    **({'transition_cost_eur':transition} if 'plant_configurations' in p else {}),
+                    total_operating_cost_eur=variable+startup+no_load+degradation+transition))
             fields=('variable_cost_eur','startup_cost_eur','no_load_cost_eur','throughput_mwh','degradation_cost_eur','total_operating_cost_eur')
+            if 'plant_configurations' in p:fields=fields+('transition_cost_eur',)
             total=sum(cash[aid].values(),Decimal(0))
             output[aid]=dict(participant=asset['participant'],technology=technology,
                 attributed_cash_by_settlement_participant_eur={p:str(v) for p,v in cash[aid].items()},
