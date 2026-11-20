@@ -6,7 +6,7 @@ from functools import wraps
 import math
 
 DEFAULTS=dict(backend='auto',time_limit_seconds=90.,relative_gap=0.,absolute_gap=0.,
-              threads=1,logging=False)
+              threads=1,logging=False,warm_start=False,warm_start_repair_seconds=5.,warm_start_source='schedule')
 STAGES={'DAM','ISP','RTBM','RTBM_projection','must_run','storage_strategy','diagnostic','unspecified'}
 _session=ContextVar('emst_solver_session',default=None)
 _stage=ContextVar('emst_solver_stage',default=None)
@@ -27,6 +27,10 @@ def configuration(value=None):
             if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or v<0 or (key=='time_limit_seconds' and v==0):raise ValueError(f'Invalid solver option {key}')
         if type(data['threads']) is not int or data['threads']<1:raise ValueError('Solver threads must be a positive integer')
         if type(data['logging']) is not bool:raise ValueError('Solver logging must be boolean')
+        if type(data['warm_start']) is not bool:raise ValueError('warm_start must be boolean')
+        if data['warm_start_source'] not in ('schedule','lp'):raise ValueError('warm_start_source must be schedule or lp')
+        v=data['warm_start_repair_seconds']
+        if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or v<=0:raise ValueError('warm_start_repair_seconds must be positive')
         return data
     base=validate(value)
     if not isinstance(overrides,dict) or set(overrides)-STAGES:raise ValueError('Unknown solver stage override')

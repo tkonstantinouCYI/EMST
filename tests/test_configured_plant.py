@@ -21,7 +21,7 @@ def force_state(model,state,index=0):
     original=module.solve
     names=list(states(model.assets['ccgt'].parameters['plant_configurations']))
     def forced(problem,mip=True):
-        if mip:problem+=next(v for v in problem.variables() if v.name==f'plant_ccgt_state_{names.index(state)}_{index}')==1
+        if mip:problem+=problem._emst_configuration_states['ccgt'][state,index]==1
         return original(problem,mip)
     return patch.object(module,'solve',side_effect=forced)
 
@@ -33,6 +33,17 @@ def isp(m,demand,requirements=None):
 
 
 class ConfiguredPlantTests(unittest.TestCase):
+    formulation='reference'
+
+    def setUp(self):
+        original=build_market
+        def selected(*args,**kwargs):
+            market=original(*args,**kwargs)
+            market.assets['ccgt'].parameters['configuration_formulation']=self.formulation
+            return market
+        self.selection=patch(__name__+'.build_market',side_effect=selected)
+        self.selection.start();self.addCleanup(self.selection.stop)
+
     def test_invalid_component_history_and_transition_data(self):
         a=build_market().assets['ccgt'];d=a.parameters['plant_configurations']
         invalid=asdict(a.initial_state);invalid['component_histories']['GT2']['on']=True
@@ -160,5 +171,9 @@ class ConfiguredPlantTests(unittest.TestCase):
                     second=full.days['2026-11-06']
                     self.assertEqual(second.rtbm[0]['assets']['ccgt']['configuration_state'],'add2:2')
                     self.assertEqual(sum(v['assets']['ccgt']['transition_cost_eur'] for v in second.rtbm),0)
+
+class CompactConfiguredPlantTests(ConfiguredPlantTests):
+    formulation='compact'
+
 
 if __name__=='__main__':unittest.main()

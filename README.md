@@ -276,3 +276,43 @@ python examples/configured_plant.py --rtbm-interval-minutes 30 --output ccgt30
 ```
 
 See [configuration inputs, costs, settlement and limitations](docs/configured-plants.md).
+
+Reserve capacity during technically eligible CC transitions can be enabled per
+product and direction with explicit transition MW envelopes. It uses the existing
+continuous reserve variables and adds no binaries. The example's eligibility and
+envelopes are synthetic assumptions:
+
+```sh
+python examples/configured_plant.py --configuration-formulation compact --transition-reserves --rtbm-interval-minutes 30 --output ccgt-reserves
+```
+
+See [transition-capacity inputs and limits](docs/configured-plants.md#reserve-capacity-during-transitions).
+For reproducible initial-ISP timing experiments with one three-configuration CC
+plant and 24 hourly intervals, run `python tools/benchmark_cc_transition_reserves.py`.
+The [hourly experiment](docs/hourly-virtual-cc-experiment.md) is a standalone
+approximation; the public daily `Market.run()` ISP still uses half-hour intervals.
+
+## Optional compact configured-plant commitment
+
+Set `configuration_formulation="compact"` when calling
+`Market.add_configured_thermal()` to use exact transition-start indicators and
+derived transition progression, with continuous exact component-event auxiliaries.
+`"reference"` remains the default and retains expanded occupancy commitment.
+Physical data, transitions, reserve rules and optimality requirements are unchanged.
+See [equations, equivalence proof, synthetic benchmarks and validation](docs/compact-configurations.md).
+
+## Optional ISP warm starts
+
+Set `solver_config={"stages": {"ISP": {"warm_start": True}}}` when constructing
+`Market` to repair and submit candidate schedules to both full ISP MILPs.
+The final objective and optimality targets are unchanged. Warm starts default to
+off, and repair overhead can outweigh savings on easy cases. The daily examples
+accept `--isp-warm-start`.
+See [inputs, repair, diagnostics and benchmarking](docs/isp-warm-starts.md).
+The [measured comparisons](docs/isp-warm-start-benchmarks.md) include complete
+ISP/day time and show why warm starts remain optional rather than a default
+performance promise.
+
+An additional `warm_start_source="lp"` option uses the current ISP's LP
+relaxation to guide repair before the unrestricted MILP. See
+[LP-guided warm starts and the ten-unit comparison](docs/lp-guided-warm-starts.md).

@@ -67,6 +67,20 @@ def validate(components,configurations,transitions,initial):
         if not cfg[e['target']]['minimum_mw']<=profile[-1]<=cfg[e['target']]['maximum_mw']:raise ValueError('Transition does not reach target operating range')
         e['ramp_mw_hour']=number(e.get('ramp_mw_hour',max(cfg[e['source']]['ramp_mw_hour'],cfg[e['target']]['ramp_mw_hour'])),'transition ramp',1e-12)
         if any(abs(b-a)>.5*e['ramp_mw_hour']+1e-7 for a,b in zip(profile,profile[1:])):raise ValueError('Transition profile violates ramp limit')
+        eligible=e.get('reserve_eligible_products',[])
+        if not isinstance(eligible,list) or any(p not in PRODUCTS for p in eligible) or len(set(eligible))!=len(eligible):
+            raise ValueError('Transition reserve_eligible_products must list unique known products/directions')
+        e['reserve_eligible_products']=list(eligible)
+        for field in ('reserve_minimum_mw','reserve_maximum_mw'):
+            values=e.get(field)
+            if values is None:
+                if eligible:raise ValueError('Eligible transition reserves require explicit '+field+' for every step')
+                continue
+            if not isinstance(values,list) or len(values)!=len(profile):raise ValueError('Transition '+field+' must match profile length')
+            e[field]=[number(v,'transition '+field) for v in values]
+            if any(v>limit for v in e[field]):raise ValueError('Transition reserve envelope exceeds plant capacity')
+        if eligible and any(lo>endpoint or endpoint>hi for lo,endpoint,hi in zip(e['reserve_minimum_mw'],profile,e['reserve_maximum_mw'])):
+            raise ValueError('Transition reserve envelope must contain every profile endpoint')
     data=dict(components=cs,configurations=cfg,transitions=edges)
     state=initial_state(data,initial)
     return data,state
@@ -78,6 +92,15 @@ def states(data):
         for step,endpoint in enumerate(e['profile_mw']):
             c=data['configurations'][e['target']]
             result[f"{e['id']}:{step}"]=dict(configuration=e['source'],components=e['components_by_step'][step],minimum=0.,maximum=max(v['maximum_mw'] for v in data['configurations'].values()),ramp=e['ramp_mw_hour'],cost=e.get('marginal_cost',c['marginal_cost']),no_load=e.get('no_load_cost_per_hour',c['no_load_cost_per_hour']),reserve=0.,edge=e,step=step,endpoint=endpoint)
+            spec=result[f"{e['id']}:{step}"]
+            source=data['configurations'][e['source']]
+            eligible=e.get('reserve_eligible_products',[])
+            spec['reserve_by_product']={p:min(source['reserve_limit_mw'],c['reserve_limit_mw']) if p in eligible else 0. for p in PRODUCTS}
+            if eligible:
+                spec['reserve_response_ramp']=e['ramp_mw_hour']
+                spec['reserve_static_ramp']=min(e['ramp_mw_hour'],source['ramp_mw_hour'],c['ramp_mw_hour'])
+                spec['reserve_minimum']=e['reserve_minimum_mw'][step]
+                spec['reserve_maximum']=e['reserve_maximum_mw'][step]
     return result
 
 
@@ -134,7 +157,7 @@ def advance(asset,old,row,minutes):
 
 def build(model,asset,initial,intervals,p,end,paths,on,start,stop,reserve,terms,commercial,rules,*,rtbm,reference,immediate,mandatory):
     data=asset.parameters['plant_configurations'];specs=states(data);names=list(specs);n=len(intervals);cap=asset.parameters['capacity_mw'];prefix='plant_'+asset.id
-    z={};flows={};components={};transition_cost={};operating_adjustment={};fixed={}
+    z={};transition_cost={};operating_adjustment={};fixed={};counts=dict(occupancy_binary_count=0,transition_start_binary_count=0,component_event_binary_count=0,commitment_binary_count=0)
     initial_key=key_at_boundary(initial)
     # RTBM follows ISP's selected state. The remaining MTU is its only horizon.
     if rtbm:
@@ -149,46 +172,17 @@ def build(model,asset,initial,intervals,p,end,paths,on,start,stop,reserve,terms,
             fixed[j]=chosen
     else:
         if initial.get('transition') and initial['transition']['elapsed_minutes']%30:raise ValueError('ISP boundary must align unfinished configuration transitions to half-hours')
-        edges=[]
-        for e in data['transitions']:
-            chain=[e['source']]+[f"{e['id']}:{i}" for i in range(len(e['profile_mw']))]+[e['target']]
-            edges+=list(zip(chain,chain[1:]))
-        # Completion establishes the target at the boundary; it need not occupy
-        # an extra stable MTU before another permitted transition starts.
-        for e in data['transitions']:
-            for following in data['transitions']:
-                if following['source']==e['target']:
-                    edges.append((f"{e['id']}:{len(e['profile_mw'])-1}",f"{following['id']}:0"))
-        for j in range(n):
-            for s in names:z[s,j]=lp.LpVariable(f'{prefix}_state_{names.index(s)}_{j}',cat='Binary')
-            model+=lp.lpSum(z[s,j] for s in names)==1
-            # Inherited transition occupancy is fixed for the first MTU.
-            if j==0 and initial.get('transition'):model+=z[initial_key,j]==1
-            for k,(a,b) in enumerate(edges):
-                flows[a,b,j]=lp.LpVariable(f'{prefix}_flow_{k}_{j}',0,1)
-                previous=int(a==initial_key) if j==0 else z[a,j-1]
-                # A carried transition is already executing its current step.
-                if j==0 and initial.get('transition'):model+=flows[a,b,j]==0
-                else:
-                    model+=flows[a,b,j]<=previous;model+=flows[a,b,j]<=z[b,j]
-            for s in names:
-                previous=int(s==initial_key) if j==0 else z[s,j-1]
-                model+=z[s,j]-previous==lp.lpSum(v for (a,b,t),v in flows.items() if t==j and b==s)-lp.lpSum(v for (a,b,t),v in flows.items() if t==j and a==s)
-                if 'edge' in specs[s] and not (j==0 and initial.get('transition')):
-                    model+=z[s,j]<=lp.lpSum(v for (a,b,t),v in flows.items() if t==j and b==s)
-        # Component minimum on/off times apply across all virtual states.
-        for ci,(component,limits) in enumerate(data['components'].items()):
-            starts={};stops={}
-            for j in range(n):
-                status=lp.lpSum(z[s,j] for s in names if component in specs[s]['components']);components[component,j]=status
-                previous=int(initial['component_histories'][component]['on']) if j==0 else components[component,j-1]
-                starts[j]=lp.LpVariable(f'{prefix}_component_start_{ci}_{j}',cat='Binary');stops[j]=lp.LpVariable(f'{prefix}_component_stop_{ci}_{j}',cat='Binary')
-                model+=status-previous==starts[j]-stops[j];model+=starts[j]+stops[j]<=1
-                up=int(limits['minimum_up_minutes']/30);down=int(limits['minimum_down_minutes']/30)
-                model+=lp.lpSum(starts[t] for t in range(max(0,j-up+1),j+1))<=status
-                model+=lp.lpSum(stops[t] for t in range(max(0,j-down+1),j+1))<=1-status
-                h=initial['component_histories'][component];remaining=limits['minimum_up_minutes' if h['on'] else 'minimum_down_minutes']-h['duration_minutes']
-                if j*30<remaining:model+=status==int(h['on'])
+        formulation=asset.parameters.get('configuration_formulation','reference')
+        if formulation=='reference':
+            from .configurations_reference import occupancy
+        elif formulation=='compact':
+            from .configurations_compact import occupancy
+        elif formulation=='virtual':
+            from .configurations_virtual import occupancy
+        else:raise ValueError('Unknown configuration formulation')
+        z,entries,counts=occupancy(model,data,specs,names,n,prefix,initial,initial_key)
+    if not hasattr(model,'_emst_configuration_states'):model._emst_configuration_states={}
+    model._emst_configuration_states[asset.id]=z
     base=asset.parameters['marginal_cost']
     for j,t in enumerate(intervals):
         k=asset.id,j;dt=t.hours;previous=initial['power_mw'] if j==0 else end[asset.id,j-1]
@@ -198,10 +192,10 @@ def build(model,asset,initial,intervals,p,end,paths,on,start,stop,reserve,terms,
             first=f"{e['id']}:0"
             if rtbm:
                 entered=int(chosen==first and not initial.get('transition') and j==0)
-            else:entered=lp.lpSum(v for (a,b,t),v in flows.items() if b==first and t==j)
+            else:entered=entries[e['id'],j]
             entering.append(entered*e['cost_eur'])
         transition_cost[j]=lp.lpSum(entering)
-        start[k]=(int(initial['configuration']=='OFF' and chosen!='OFF' and not initial.get('transition') and j==0) if rtbm else lp.lpSum(v for e in data['transitions'] if e['source']=='OFF' for (a,b,t),v in flows.items() if b==f"{e['id']}:0" and t==j))
+        start[k]=(int(initial['configuration']=='OFF' and chosen!='OFF' and not initial.get('transition') and j==0) if rtbm else lp.lpSum(entries[e['id'],j] for e in data['transitions'] if e['source']=='OFF'))
         stop[k]=0
         selected_power=[];adjust=[]
         end[k]=lp.LpVariable(f'{prefix}_end_{j}',0,cap)
@@ -244,14 +238,35 @@ def build(model,asset,initial,intervals,p,end,paths,on,start,stop,reserve,terms,
             rup=[];rdn=[]
             for product in PRODUCTS:
                 reserve[asset.id,j,product]=lp.LpVariable(f'{prefix}_reserve_{product}_{j}',0)
-                model+=reserve[asset.id,j,product]<=lp.lpSum(min(spec['reserve'],spec['ramp']*RESPONSE_HOURS[product])*z[s,j] for s,spec in specs.items())
+                model+=reserve[asset.id,j,product]<=lp.lpSum(min(spec.get('reserve_by_product',{}).get(product,spec['reserve']),spec.get('reserve_static_ramp',spec['ramp'])*RESPONSE_HOURS[product])*z[s,j] for s,spec in specs.items())
                 terms.append(reserve[asset.id,j,product]*asset.parameters['reserve_prices'][product])
             rup=lp.lpSum(reserve[asset.id,j,x] for x in UP);rdn=lp.lpSum(reserve[asset.id,j,x] for x in DOWN)
             model+=p[k]+rup<=lp.lpSum(spec['maximum']*z[s,j] for s,spec in specs.items())
             model+=p[k]-rdn>=lp.lpSum(spec['minimum']*z[s,j] for s,spec in specs.items())
+            eligible_states={s:spec for s,spec in specs.items() if 'reserve_maximum' in spec}
+            if eligible_states:
+                active=lp.lpSum(z[s,j] for s in eligible_states)
+                lower=lp.lpSum(spec['reserve_minimum']*z[s,j] for s,spec in eligible_states.items())
+                upper=lp.lpSum(spec['reserve_maximum']*z[s,j] for s,spec in eligible_states.items())
+                # A linear transition trajectory stays between its entry and
+                # terminal powers. Endpoint checks protect capacity throughout
+                # the step, rather than checking only the MTU-average output.
+                for point,label in ((previous,'entry'),(end[k],'terminal')):
+                    model+=point+rup<=upper+2*cap*(1-active),f'{prefix}_transition_reserve_up_{label}_{j}'
+                    model+=point-rdn>=lower-2*cap*(1-active),f'{prefix}_transition_reserve_down_{label}_{j}'
+                for product in PRODUCTS:
+                    permitted={s:spec for s,spec in eligible_states.items() if spec['reserve_by_product'][product]>0}
+                    if not permitted:continue
+                    enabled=lp.lpSum(z[s,j] for s in permitted)
+                    response=RESPONSE_HOURS[product]
+                    rate=lp.lpSum(spec['reserve_response_ramp']*z[s,j] for s,spec in permitted.items())
+                    scheduled=(end[k]-previous)/dt
+                    available=response*(rate-scheduled if product in UP else rate+scheduled)
+                    big_m=cap*(1+response/dt)
+                    model+=reserve[asset.id,j,product]<=available+big_m*(1-enabled),f'{prefix}_transition_response_{product}_{j}'
         operating_adjustment[j]=lp.lpSum(adjust)
         terms.extend([transition_cost[j],operating_adjustment[j]])
-    return dict(specs=specs,z=z,transition_cost=transition_cost,operating_adjustment=operating_adjustment,initial=deepcopy(initial))
+    return dict(specs=specs,z=z,transition_cost=transition_cost,operating_adjustment=operating_adjustment,initial=deepcopy(initial),**counts)
 
 
 def row(data,j,asset,interval,rtbm):

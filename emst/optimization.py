@@ -1,6 +1,7 @@
 """Checked CBC solves and joint optimal-dual-face pricing for minimisation LPs."""
 import pulp as lp
-import math,time
+import math,time,tempfile
+from pathlib import Path
 from . import solver as control
 try:
     import highspy
@@ -15,9 +16,37 @@ def solve(problem, mip=True):
     backend_name=options['backend']
     if backend_name=='auto':backend_name='highs' if highspy is not None else 'cbc'
     if backend_name=='highs' and highspy is None:raise ValueError('HiGHS backend requested but highspy is not installed')
-    backend_class=lp.HiGHS if backend_name=='highs' else lp.PULP_CBC_CMD
+    candidate=getattr(problem,'_emst_warm_start_values',None) if mip else None
+    warm=getattr(problem,'_emst_warm_start',None) if mip else None
+    class StartedHiGHS(lp.HiGHS):
+        def callSolver(self,model):
+            # PuLP can add a fixed dummy column for a constant objective after
+            # candidate validation. Submit the known columns; let it fill that
+            # harmless new column rather than indexing a missing seed value.
+            variables=[v for v in model.variables() if v.name in candidate]
+            try:
+                status=model.solverModel.setSolution(len(variables),[v.index for v in variables],[candidate[v.name] for v in variables])
+                warm['submission_status']=str(status)
+            except RuntimeError as error:
+                warm.update(submission_status='failed_cold_start',submission_error=str(error))
+            super().callSolver(model)
+    class StartedCBC(lp.PULP_CBC_CMD):
+        def actualSolve(self,model,**kwargs):
+            # CBC's command parser splits paths on spaces. Keep the MIP-start
+            # files in an owned, relative, unique directory until it has read
+            # them, then clean up. Do not share fixed filenames across solves.
+            with tempfile.TemporaryDirectory(prefix='.emst-cbc-',dir='.') as folder:
+                self._start_folder=Path(folder).name
+                return super().actualSolve(model,**kwargs)
+        def create_tmp_files(self,name,*extensions):
+            return (str(Path(self._start_folder)/('model.'+ext)) for ext in extensions)
+    backend_class=(StartedHiGHS if candidate else lp.HiGHS) if backend_name=='highs' else StartedCBC if candidate else lp.PULP_CBC_CMD
+    extra={}
+    if candidate and backend_name=='cbc':
+        for v in problem.variables():v.varValue=candidate[v.name]
+        extra.update(warmStart=True,keepFiles=True);warm['submission_status']='submitted_to_CBC_MIP_start'
     backend=backend_class(msg=options['logging'],mip=mip,gapRel=options['relative_gap'] if mip else 0,
-        gapAbs=options['absolute_gap'] if mip else 0,threads=options['threads'],timeLimit=options['time_limit_seconds'])
+        gapAbs=options['absolute_gap'] if mip else 0,threads=options['threads'],timeLimit=options['time_limit_seconds'],**extra)
     started=time.perf_counter();failure=None
     try:status=problem.solve(backend)
     except (lp.PulpSolverError,RuntimeError) as error:
@@ -49,6 +78,7 @@ def solve(problem, mip=True):
         objective=objective if incumbent else None,best_bound=bound,
         gap=finite(getattr(info,'mip_gap',None)) if mip else None,
         wall_seconds=time.perf_counter()-started,termination_reason=reason,error=failure)
+    if warm is not None:record['warm_start']=dict(warm)
     control.record(record)
     # Time-limited incumbents never opt in to settlement; configured gap criteria still require optimal termination.
     if reason!='optimal':raise control.SolveError(record)

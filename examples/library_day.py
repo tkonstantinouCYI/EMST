@@ -56,8 +56,12 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--dataframes',action='store_true')
     parser.add_argument('--storage-energy',action='store_true');parser.add_argument('--storage-capacity',action='store_true')
     parser.add_argument('--rtbm-interval-minutes',type=int,choices=(5,30),default=5)
+    parser.add_argument('--isp-warm-start',action='store_true')
     parser.add_argument('--output',default='output/public_library_day');args=parser.parse_args()
     market,index,requirements,history=build_market(args.dataframes,args.storage_energy,args.storage_capacity)
+    if args.isp_warm_start:
+        from emst.solver import configuration
+        market.solver_config=configuration({'stages':{'ISP':{'warm_start':True}}})
     # A user supplies TSO forecasts independently of participants' bid forecasts.
     tso={'demand':[sum(float(a.forecast.iloc[t,0] if args.dataframes else a.forecast[t]) for a in market.assets.values() if a.technology=='supplier')+1 for t in range(48)],
          'res':[float(market.assets['solar_portfolio'].forecast.iloc[t,0] if args.dataframes else market.assets['solar_portfolio'].forecast[t])*.99 for t in range(48)]}

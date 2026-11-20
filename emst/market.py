@@ -181,7 +181,7 @@ class Market:
 
     def add_configured_thermal(self,id,participant,*,components,configurations,transitions,
             initial_state,dam_price=None,energy_up_price=None,energy_down_price=None,
-            reserve_cost=2.,reserve_prices=None,strategy=None,strategy_parameters=None):
+            reserve_cost=2.,reserve_prices=None,strategy=None,strategy_parameters=None,configuration_formulation='reference'):
         """Register one plant; configuration alternatives are internal, never assets.
 
         Transition profiles and component membership are explicit half-hour steps.
@@ -189,6 +189,7 @@ class Market:
         operating configuration marginal cost). Configuration costs affect ISP.
         """
         from .configurations import validate
+        if configuration_formulation not in ('reference','compact'):raise ValueError('configuration_formulation must be reference or compact')
         data,state=validate(components,configurations,transitions,initial_state)
         configs=list(data['configurations'].values());operating=[c for name,c in data['configurations'].items() if name!='OFF']
         if not operating:raise ValueError('At least one operating configuration is required')
@@ -204,7 +205,7 @@ class Market:
             reserve_limit_mw=max(c['reserve_limit_mw'] for c in configs),reserve_cost=reserve_cost,
             energy_up_price=energy_up_price,energy_down_price=energy_down_price,reserve_prices=reserve_prices,
             strategy=strategy,strategy_parameters=strategy_parameters)
-        a.parameters['plant_configurations']=data;a.initial_state=state
+        a.parameters['plant_configurations']=data;a.parameters['configuration_formulation']=configuration_formulation;a.initial_state=state
         return a
 
     def add_storage(self,id,participant,*,power_mw,capacity_mwh,initial_state,efficiency_charge=.95,
@@ -247,7 +248,7 @@ class Market:
     def run(self,*,time_index,reserve_requirements=None,price_forecast=None,historical_rtbm_prices=None,price_ranges=False,accounting_cycles=False,
             system_forecasts=None,system_observations=None,previous_system_observation=None,
             must_run_requirement_mw=None,must_run_supplier_shares=None,actual_balance_tolerance_mwh=1e-6,
-            storage_terminal_soc_mwh=None,rtbm_interval_minutes=5):
+            storage_terminal_soc_mwh=None,rtbm_interval_minutes=5,isp_warm_start=None):
         if accounting_cycles:raise NotImplementedError("The generic participant API currently runs daily settlement; full historical accounting remains available through emst.runner")
         from .resolution import validate_minutes
         validate_minutes(rtbm_interval_minutes)
@@ -255,11 +256,14 @@ class Market:
         from .solver import session
         from .evaluation import enrich,residuals
         residuals([],actual_balance_tolerance_mwh)
+        if isp_warm_start is not None:
+            from .warm_start import validate_seed
+            validate_seed(isp_warm_start)
         for asset in self.assets.values():asset.strategy.validate(asset.technology)
         with session(self.solver_config) as context:
             result=run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
                 system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares,
-                storage_terminal_soc_mwh,rtbm_interval_minutes)
+                storage_terminal_soc_mwh,rtbm_interval_minutes,isp_warm_start)
         return enrich(result,self,context['records'],actual_balance_tolerance_mwh)
 
     def evaluate(self,**inputs):

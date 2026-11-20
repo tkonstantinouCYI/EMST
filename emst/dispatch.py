@@ -13,7 +13,7 @@ from .phases import build as build_phases,bind_average_power,row_phase,canonical
 
 
 @stage(lambda *args,**kwargs: 'RTBM_projection' if kwargs.get('projection',False) else 'RTBM' if kwargs.get('rtbm',False) else 'ISP')
-def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None,terminal_time=None,projection=False,immediate_ramping=False):
+def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None,terminal_time=None,projection=False,immediate_ramping=False,warm_start_seed=None):
     thermal=[a for a in assets if a.technology=="thermal"]
     storage=[a for a in assets if a.technology=="storage"]
     renewables=[a for a in assets if a.technology=='res']
@@ -190,6 +190,9 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 m+=lp.lpSum(reserve[a.id,j,product] for a in thermal+storage)+reserve_shortage[product,j]>=requirements[product][j],f"requirement_{product}_{j}"
     terms.extend(slack_costs.values())
     m+=lp.lpSum(terms)
+    if not rtbm:
+        from .warm_start import prepare
+        prepare(m,assets,states,intervals,commercial,warm_start_seed)
     milp=solve(m);frozen=freeze_discrete(m)
     with purpose('fixed_discrete_pricing'):fixed=solve(m,False)
     if abs(milp-fixed)>1e-3:raise RuntimeError("Fixed-discrete dispatch LP changed the optimum")
@@ -300,7 +303,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
         objective_components.update({k:float(lp.value(v)) for k,v in slack_costs.items()})
         objective_components['total']=objective_components['energy_up_cost']-objective_components['energy_down_credit']+objective_components['reserve_capacity_cost']+objective_components['startup_cost']+sum(objective_components[k] for k in slack_costs)+objective_components.get('configuration_transition_cost',0)+objective_components.get('configuration_operating_adjustment',0)
         if abs(objective_components['total']-fixed)>1e-3:raise RuntimeError('ISP offer objective reconciliation failed')
-    return dict(solution_class="relaxed_with_slack" if slack_used([r["slack"] for r in rows]) else "feasible_without_slack",
+    return dict(**({'warm_start':deepcopy(m._emst_warm_start)} if hasattr(m,'_emst_warm_start') else {}),solution_class="relaxed_with_slack" if slack_used([r["slack"] for r in rows]) else "feasible_without_slack",
                 smoothing=smoothing,objective_components_eur=objective_components,physical_security_feasible=not slack_used([r["slack"] for r in rows]),
                 slack_by_period=[r["slack"] for r in rows],status="Optimal",milp_objective_eur=milp,fixed_lp_objective_eur=fixed,
                 frozen_discrete=frozen,rows=rows,pricing_method="fixed_discrete_lp_shadow_prices",
@@ -308,6 +311,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                 demand_mw=list(demand),res_available_mw=list(res),requirements_mw={} if rtbm else deepcopy(requirements),initial_state=deepcopy(states),
                 thermal_physics='RTBM_thermal_path' if rtbm else 'MTU_average_power_ramps',commercial_mwh=deepcopy(commercial),
                 storage_activation_formulation='separate_up_down_with_binary_exclusivity',storage_activation_binary_count=sum(name.startswith('storage_activation_mode_') for name in frozen),
-                thermal_state_binary_count=(4*sum(not config.configured(a) for a in thermal)*len(intervals)+sum(len(d['z']) for d in configuration_data.values())) if not rtbm else 0,
-                **({'configuration_state_binary_count':sum(len(d['z']) for d in configuration_data.values()) if not rtbm else 0} if configuration_data else {}),
+                thermal_state_binary_count=(4*sum(not config.configured(a) for a in thermal)*len(intervals)+sum(d['commitment_binary_count'] for d in configuration_data.values())) if not rtbm else 0,
+                **({key:sum(d[key] for d in configuration_data.values()) for key in ('occupancy_binary_count','transition_start_binary_count','component_event_binary_count','commitment_binary_count')} if configuration_data else {}),
+                **({'configuration_state_binary_count':sum(d['occupancy_binary_count'] for d in configuration_data.values())} if configuration_data else {}),
                 power_definition='(MS_mwh + energy_up_mwh - energy_down_mwh) / hours')

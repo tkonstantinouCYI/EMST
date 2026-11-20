@@ -594,3 +594,22 @@ mutually exclusive configurations. `PlantState` carries configuration, power,
 component histories and an optional unfinished transition. Existing
 `add_thermal()` and `ThermalState` remain unchanged.
 See [the full input schema and settlement conventions](configured-plants.md).
+
+### Configured-plant formulation selection
+
+`add_configured_thermal(..., configuration_formulation="reference")` also accepts
+`"compact"`. The compact variant uses binary stable occupancies and transition
+starts, affine transition-step occupancy, and exact continuous component events.
+The reference remains selectable/default. Both share the physical and settlement
+kernels. See [compact formulation](compact-configurations.md).
+
+Optional ISP warm starts use the solver-stage controls `warm_start=False` and
+`warm_start_repair_seconds=5.0`. `Market.run(isp_warm_start=raw_ISP_run)` accepts a
+prior initial schedule; the noon ISP automatically reuses the initial run's
+remaining schedule. Repair happens on a copy and cannot constrain the final MILP.
+See [warm-start usage, diagnostics and limitations](isp-warm-starts.md).
+
+`warm_start_source="lp"` selects an economic LP-relaxation candidate;
+`"schedule"` is the default. The guiding LP and feasibility repair share
+`warm_start_repair_seconds`. The full final MILP is unchanged. See
+[LP-guided warm starts](lp-guided-warm-starts.md).

@@ -69,7 +69,7 @@ def _advance(assets,state,rows,minutes):
 
 def run_market(market,time_index,reserve_requirements,price_forecast,historical_rtbm_prices=None,price_ranges=False,
                system_forecasts=None,system_observations=None,previous_system_observation=None,
-               must_run_requirement_mw=None,must_run_supplier_shares=None,storage_terminal_soc_mwh=None,rtbm_interval_minutes=5):
+               must_run_requirement_mw=None,must_run_supplier_shares=None,storage_terminal_soc_mwh=None,rtbm_interval_minutes=5,isp_warm_start=None):
     from .market import MarketResults
     index=timestamps(time_index)
     if not index:raise ValueError('Empty market time index')
@@ -204,7 +204,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         observation_update(load[0],renewable[0],previous=previous_system_observation)
     def plan(start,initial):
         return dispatch(assets,initial,periods[start:],load[start:],renewable[start:],
-            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,storage_terminal_soc=storage_terminal_soc_mwh,mandatory_on={a.id:mandatory[a.id][start:] for a in assets if a.technology=='thermal'},price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'})
+            {a.id:schedules[a.id][start:] for a in assets},{p:v[start:] for p,v in requirements.items()},rules,storage_terminal_soc=storage_terminal_soc_mwh,mandatory_on={a.id:mandatory[a.id][start:] for a in assets if a.technology=='thermal'},price_ranges=price_ranges,res_forecasts={a.id:forecast[a.id][start:] for a in assets if a.technology=='res'},warm_start_seed=first if start else isp_warm_start)
     first=plan(0,state);first.update(id='ISP_initial',cutoff=datetime.combine(day,time(16),CYPRUS).isoformat(),first_period=0)
     # Initial cutoff is on the previous calendar day.
     from datetime import timedelta

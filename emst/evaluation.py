@@ -103,7 +103,7 @@ def enrich(result,market,records,tolerance_mwh):
     result.inputs['forward_contracts']=[asdict(c) for c in market.forwards]
     balance=residuals(result.rtbm,tolerance_mwh)
     stage_times={}
-    for r in records:stage_times[r['stage']]=stage_times.get(r['stage'],0)+r['wall_seconds']
+    for r in records:stage_times[r['stage']]=stage_times.get(r['stage'],0)+r['wall_seconds']+r.get('warm_start',{}).get('preparation_wall_seconds',0.)
     result.diagnostics=dict(solve_records=deepcopy(records),solver_wall_seconds_by_stage=stage_times,
         actual_balance=balance,optimization_feasible=True,
         forecast_balance_verified=result.audit['checks'].get('forecast_RTBM_balance',False),

@@ -80,7 +80,8 @@ average energy per MTU. `components_by_step` explicitly declares the components
 online throughout each step; its final set must match the target configuration.
 This avoids inventing assumptions about when a gas/steam turbine becomes online.
 The transition ramp limit defaults to the larger source/target ramp limit.
-Transition reserves are zero in this first implementation. Optional transition
+Transition reserves default to zero. Eligible products and directions can be
+enabled explicitly on each edge; see the next section. Optional transition
 `marginal_cost` and `no_load_cost_per_hour` override operating costs during the
 trajectory; they default to the target configuration, or the source for shutdown
 to OFF. These operating costs are separate from the once-only `cost_eur`.
@@ -92,6 +93,67 @@ Permitted transitions are exactly the supplied edges. There are no implicit
 shortcuts, interruptions or instantaneous configuration changes. A completed
 transition can be followed immediately by another supplied permitted edge; no
 extra stable MTU is inserted. Component minimum-time obligations still apply.
+
+### Reserve capacity during transitions
+
+To declare technical eligibility, add these fields to an edge before registering
+the plant (all arrays have one value per `profile_mw` step):
+
+```python
+edge.update(
+    reserve_eligible_products=["FCR_up", "FCR_down", "aFRR_up", "mFRR_up"],
+    reserve_minimum_mw=[40, 40],
+    reserve_maximum_mw=[160, 160],
+)
+```
+
+The default `reserve_eligible_products=[]` prohibits all transition capacity.
+Known product/direction names are `FCR_up`, `FCR_down`, `aFRR_up`, `aFRR_down`,
+`mFRR_up`, `mFRR_down`, and `RR_up`. Eligibility requires explicit minimum and
+maximum MW envelopes covering the whole linear trajectory within each step,
+including its entry power. Bounds must contain the declared profile endpoints;
+the ISP also checks actual entry-power compatibility. These bounds constrain
+reserve deliverability, not a second independent dispatch schedule.
+
+Per-product capability is capped by the smaller source/destination
+`reserve_limit_mw` and the response-time ramp limit. Total upward/downward
+reserves across products share physical headroom/footroom at both the entry and
+terminal power. For linear steps this protects every point on the trajectory.
+Response ramps account for the baseline scheduled ramp: for response time tau
+and baseline slope v, upward capability is at most tau*(R-v), downward at most
+tau*(R+v), where R is the declared transition ramp limit. Static response
+capability is additionally capped by the smallest transition/source/destination
+ramp limit. This keeps a technically permitted transition feasible even if a
+stable configuration has a lower response rate. This is a conservative fixed-step capability calculation, not a
+multi-step dynamic reserve deployment simulation.
+
+The existing continuous reserve variables are reused. No new binary or
+continuous decision variables are introduced. All configured ISP formulations
+share these constraints. RTBM still has no reserve-capacity products and retains
+its existing prescribed transition trajectory behaviour; this change concerns
+ISP procurement and does not implement a new RTBM activation policy.
+
+Only technically supported transitions should be enabled. Paths involving OFF
+have zero capacity under the source/destination minimum-capability rule. The
+synthetic hourly comparison is reproducible with:
+
+```console
+python tools/benchmark_cc_transition_reserves.py
+```
+
+The full daily example also accepts `--transition-reserves`, independently of
+`--configuration-formulation compact` and `--rtbm-interval-minutes 5|30`:
+
+```console
+python examples/configured_plant.py --configuration-formulation compact --transition-reserves --rtbm-interval-minutes 30 --output ccgt-reserves
+```
+
+This enables the example's synthetic internal-transition eligibility. It does
+not infer technical capability for a real plant. Its normal daily run retains
+the half-hour ISP and exports raw/readable results and verification JSON.
+
+See [the experimental hourly CC benchmark](hourly-virtual-cc-experiment.md) for
+the hourly approximation, synthetic assumptions and initial-ISP-only scope.
 
 An unfinished boundary state additionally supplies
 `transition={"id": "add2", "elapsed_minutes": 30}` and the actual boundary power.
@@ -185,10 +247,17 @@ on the existing simple thermal model.
 
 ## Validation evidence
 
-The full regression suite passed **153 tests** with HiGHS 1.16.0, without skips,
+Publication validation on 20 November 2026 passed **196 tests**, with no skips,
+failures, errors or collection errors (Python 3.14.10, HiGHS 1.16.0). This includes
+a full public daily run using compact commitment and positive transition-capacity
+awards, verified RTBM clearing and reconciled plant-level settlement. Local
+evidence is in `output/publish-cc-validation/`; rerun `python tools/run_tests.py`
+from a checkout to generate a new validation report.
+
+The original configured-plant regression suite passed **153 tests** with HiGHS 1.16.0, without skips,
 failures, errors or collection errors. All **12 dedicated configured-plant tests**
 also passed with HiGHS 1.15.1. They check mutually exclusive capacity, illegal
-jumps, component minimum up/down times, reserve headroom, zero transition
+jumps, component minimum up/down times, reserve headroom, default zero transition
 reserves, back-to-back transitions, explicit operating-cost reconciliation,
 both RTBM modes, one plant meter/settlement position, noon continuation, and
 exact continuous-versus-checkpoint/resume equality with an unfinished midnight
@@ -199,3 +268,12 @@ Local evidence: `output/configured-plant-final-tests16/`,
 `tmp/configured-plant-final15.log`, and the raw/readable daily example exports in
 `output/configuration5/` and `output/configuration30/`. Both example exports passed
 every stage audit, used no security slack, and reconciled participant cashflows.
+
+## Optional compact commitment
+
+The expanded reference formulation remains the default. Pass
+`configuration_formulation="compact"` to `add_configured_thermal()` for the exact
+transition-start formulation. It preserves the physical model and derives
+transition progression without a binary for every transition step. See the
+[equations, equivalence proof and reproduction instructions](compact-configurations.md)
+and [matched synthetic benchmark results](compact-configurations-benchmarks.md).
