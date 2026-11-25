@@ -137,13 +137,13 @@ class RESDailyTests(unittest.TestCase):
         self.assertTrue(all(abs(m['UNINSTQ_mwh']+10)<1e-5 for m in meters))
         self.assertTrue(all(abs(m['INSTQ_mwh']+sum(r['RES_delivered_down_mwh']['solar'] for r in result.rtbm[m['period']*6:(m['period']+1)*6]))<1e-5 for m in meters))
 
-    def test_unaccepted_DAM_generation_is_not_paid_as_balancing_curtailment(self):
+    def test_unscheduled_available_generation_requires_explicit_curtailment(self):
         result=self.run_day(bid_demand=40)
         self.assertTrue(result.audit['passed'],result.audit)
-        self.assertTrue(all(abs(r['assets']['solar']['down_mwh'])<1e-6 for r in result.rtbm))
-        self.assertTrue(all(abs(r['res_commercial_curtailment_mw']-60)<1e-5 for r in result.rtbm))
+        self.assertTrue(all(abs(r['assets']['solar']['down_mwh']-5)<1e-6 for r in result.rtbm))
+        self.assertTrue(all(abs(r['res_commercial_curtailment_mw'])<1e-5 for r in result.rtbm))
         self.assertTrue(all(abs(r['actual_RES_mwh']-40/12)<1e-5 for r in result.rtbm))
-        self.assertTrue(all(abs(float(e['cash_eur']))<1e-5 for e in result.ledger if e['component']=='S03' and e['account']=='participant:solar_owner:nonDAM'))
+        self.assertTrue(all(abs(m['INSTQ_mwh']+30)<1e-5 and abs(m['UNINSTQ_mwh']-30)<1e-5 for m in result.meters if m['asset']=='solar'))
 
 
 if __name__=='__main__':unittest.main()

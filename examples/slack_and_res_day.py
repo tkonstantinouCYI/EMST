@@ -26,7 +26,7 @@ def shortage_case():
 
 
 def main():
-    for name,builder in (('res_down_day',res_case),('res_DAM_curtailment_day',lambda:res_case(bid_demand=40)),
+    for name,builder in (('res_down_day',res_case),('res_unscheduled_availability_day',lambda:res_case(bid_demand=40)),
                          ('slack_shortage_day',shortage_case)):
         m,inputs=builder();result=m.run(**inputs);result.save('output/'+name)
         if not result.audit['passed']:raise AssertionError(result.audit)

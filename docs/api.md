@@ -270,12 +270,13 @@ aggregated for compatibility and that source is identified in the manifest.
 `system_observations={"demand": ..., "res": ...}` optionally supplies independent
 system measurements (48 held values or 288 values). Otherwise measurements are
 aggregated from actual supplier/RES series. RES observations used for the next
-available-output forecast add back known DAM and balancing curtailment; this
+available-output forecast add back known instructed curtailment; this
 prevents instructed curtailment from masquerading as a weather forecast error. The actuals still drive participant
 settlement independently. Measurement of RTU t is available at its end, so it
 first affects RTU t+1. The default assumes no additional telemetry delay.
 
-RTBM applies, separately to demand and RES:
+For demand in five-minute RTBM, and for RES in the noon projection, the
+observation-based forecast applies:
 
 `prediction[t] = max(0, TSO_forecast[t] + observation[t-1] - TSO_forecast[t-1])`
 
@@ -404,33 +405,33 @@ Thermals provide downward offers subject to their constraints. Storage provides
 energy offers only when its energy flag is enabled. Suppliers remain forecast
 portfolios, without demand-response offers in this release.
 
-TSO available-RES forecasts are allocated using participant forecast shares
-(capacity/equal shares if all forecast shares are zero). The dispatch reference
-is limited by both forecast availability and the accepted commercial schedule.
-Only accepted reductions from that reference are balancing instructions.
-Unaccepted DAM generation is separate commercial curtailment, with no balancing
-payment. Forecast/weather shortfalls are not manufactured into accepted offers.
+ISP available-RES forecasts are allocated using participant forecast shares
+(capacity/equal shares if all forecast shares are zero). Availability is never
+capped at the commercial schedule. Executed RTBM uses each portfolio's current
+available-output input directly, in both resolutions. Current RES availability
+is assumed known at the interval gate; future actuals are never read. See
+[RES baseline and settlement policy](res-availability.md).
 
 `RES_instructions` exports awarded and delivered downward MWh and any delivery
 shortfall. These offers are price forming and contribute to market activation
 weighting; they are separate from external PA priority-control instructions.
 RES capacity remains unsupported even if requested in the ruleset.
 
-For `available` actuals, output is limited by the DAM schedule and then by the
-accepted downward instruction, capped by physically available energy. Metered
-output, DAM curtailment and delivered balancing curtailment conserve available
-energy. In `metered` mode, the input is authoritative already-curtailed output;
-no second subtraction is applied, and delivery of the instruction is assumed
-because an independent available-output meter was not supplied.
+For `available` actuals, delivered energy equals availability minus explicit
+RTBM curtailment. For `metered` actuals, delivery is fixed and no additional
+curtailment is inferred or optimized. Optional `metered_curtailment_mw` supplies
+known, already-executed instructions; these enter settlement and are added back
+to observations, without being subtracted from delivery again.
 
-RES instructed settlement quantity is the negative delivered balancing reduction.
-The remaining meter-minus-commercial-schedule difference is uninstructed energy.
+At zero tolerance, `INSTQ = -curtailment` and
+`UNINSTQ = delivery + curtailment - market_schedule`, including curtailment above
+the scheduled sale. A negative commercial reference is not physical generation.
 This keeps weather deviations separate. Existing grant-RES payment exclusions
 remain in force. External PA control remains available in the specialised
 high-RES acceptance fixture; it is explicitly labelled, non-price-forming and
 never relabelled as an ordinary RES market offer.
 
-`python examples/slack_and_res_day.py` runs a market-curtailment day, a DAM-only
+`python examples/slack_and_res_day.py` runs a market-curtailment day, an unscheduled-availability
 curtailment case, and a deliberately short system reported as relaxed.
 
 ## Balancing eligibility and actual delivery

@@ -50,6 +50,7 @@ class Asset:
     initial_state: object=None
     forecast: object=None
     actual: object=None
+    metered_curtailment: object=None
 
 
 @dataclass
@@ -243,12 +244,16 @@ class Market:
 
     def add_res(self,id,participant,*,generation_forecast,actual_generation,capacity_mw=None,
                 grant_res=False,voltage="MV",strategy=None,strategy_parameters=None,
-                energy_down_price=0.,actual_generation_kind="available"):
+                energy_down_price=0.,actual_generation_kind="available",metered_curtailment_mw=None):
         if not math.isfinite(energy_down_price):raise ValueError('RES downward price must be finite EUR/MWh')
         if actual_generation_kind not in ('metered','available'):raise ValueError('RES actual_generation_kind is metered or available')
-        return self._add(id,participant,"res",self._strategy(participant,"res",strategy,strategy_parameters),dict(
+        if metered_curtailment_mw is not None and actual_generation_kind!='metered':
+            raise ValueError('metered_curtailment_mw requires metered RES delivery')
+        asset=self._add(id,participant,"res",self._strategy(participant,"res",strategy,strategy_parameters),dict(
             capacity_mw=capacity_mw,grant_res=grant_res,voltage=voltage,
             energy_down_price=energy_down_price,actual_generation_kind=actual_generation_kind),forecast=generation_forecast,actual=actual_generation)
+        asset.metered_curtailment=metered_curtailment_mw
+        return asset
 
     def add_supplier(self,id,participant,*,demand_forecast,actual_consumption,voltage="HV",small_supplier=False,
                      strategy=None,strategy_parameters=None):

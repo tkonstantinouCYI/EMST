@@ -268,6 +268,9 @@ def _participant(result, participant):
             record['isp_run_id'] = row['isp_run']
             if asset in row['RES_delivery_mwh']:
                 record['actual_energy_mwh'] = row['RES_delivery_mwh'][asset]
+                record['available_energy_mwh'] = row['RES_available_mwh'][asset]
+                record['delivered_curtailment_mwh'] = row['RES_delivered_down_mwh'][asset]
+                record['baseline_policy'] = result.manifest.get('RES_baseline_policy')
             records.append(record)
         for asset in sorted(assets - row['assets'].keys()):
             actual = result.inputs['actual_mw'][asset][i] * row['hours']

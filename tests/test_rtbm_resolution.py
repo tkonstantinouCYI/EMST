@@ -81,8 +81,8 @@ class ResolutionIntegrationTests(unittest.TestCase):
         self.assertTrue(r.audit['passed'])
         self.assertAlmostEqual(r.rtbm[0]['system_prediction']['demand_prediction_mw'],90)
         self.assertAlmostEqual(r.rtbm[0]['system_prediction']['res_prediction_mw'],15)
-        # RES beyond its commercial schedule is curtailed by the existing rules;
-        # all remaining demand is met without the thermal 0.5 MW ramp restriction.
+        # All 15 MW of available RES is delivered independently of its schedule;
+        # thermal output meets the remainder with immediate 30-minute ramping.
         self.assertGreater(r.rtbm[0]['assets']['unit']['power_mw'],70)
         self.assertAlmostEqual(r.rtbm[0]['physical_imbalance_mwh'],0,places=5)
         self.assertEqual(r.rtbm[0]['assets']['unit']['ramping_mode'],'immediate')

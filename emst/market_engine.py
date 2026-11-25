@@ -101,6 +101,18 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         actual_fine[a.id]=values if len(values)==len(fine_rtus) else [v for v in values for _ in range(6)]
         if a.technology=='res' and a.parameters['capacity_mw'] is not None:
             if max(forecast[a.id]+actual_fine[a.id])>a.parameters['capacity_mw']+1e-6:raise ValueError('RES time series exceeds registered capacity')
+    metered_curtailment={}
+    for a in assets:
+        if a.technology!='res':continue
+        raw=a.metered_curtailment
+        if raw is None:values=[0.]*len(fine_rtus)
+        else:
+            ci=[t.start for t in fine_rtus] if len(raw)==len(fine_rtus) else index
+            values=mw_values(raw,ci,a.id+' metered curtailment MW')
+            if len(values)==48:values=[v for v in values for _ in range(6)]
+        metered_curtailment[a.id]=values if rtbm_interval_minutes==5 else aggregate_six(values)
+        if a.parameters.get('capacity_mw') is not None and max(x+y for x,y in zip(actual_fine[a.id],values))>a.parameters['capacity_mw']+1e-6:
+            raise ValueError('RES delivered plus known curtailment exceeds registered capacity')
     actual=actual_fine if rtbm_interval_minutes==5 else {aid:aggregate_six(v) for aid,v in actual_fine.items()}
     if not any(a.technology=='supplier' for a in assets):raise ValueError('At least one demand portfolio is required')
     if storage_terminal_soc_mwh is not None:
@@ -239,6 +251,19 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
             demand_now=sum(actual[a.id][position] for a in assets if a.technology=='supplier')
             res_now=sum(actual[a.id][position] for a in assets if a.technology=='res')
             predictions=[observation_update(demand_now,res_now)]
+        res_inputs=None
+        if not projection:
+            # Current available-output inputs are known at the RTBM gate. Never
+            # substitute a commercial schedule or inspect later actual values.
+            res_inputs={a.id:dict(kind=a.parameters['actual_generation_kind'],
+                output_mw=[actual[a.id][position]]*n,
+                known_curtailment_mw=[metered_curtailment[a.id][position]]*n)
+                for a in assets if a.technology=='res'}
+            total_res=sum(v['output_mw'][0]+v['known_curtailment_mw'][0] for v in res_inputs.values())
+            for prediction in predictions:
+                prediction['res_forecast_prediction_mw']=prediction['res_prediction_mw']
+                if res_inputs:prediction['res_prediction_mw']=total_res
+                prediction['net_demand_prediction_mw']=prediction['demand_prediction_mw']-prediction['res_prediction_mw']
         references=deepcopy(rows['assets'])
         for a in controllable:
             if not onoff.enabled(a):continue
@@ -247,9 +272,9 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         result=dispatch(assets,current,horizon,[x['demand_prediction_mw'] for x in predictions],
             [x['res_prediction_mw'] for x in predictions],
             {a.id:[schedules[a.id][t]/per_mtu]*n for a in assets},
-            {},rules,projection=projection,immediate_ramping=rtbm_interval_minutes==30,storage_terminal_soc=storage_terminal_soc_mwh,terminal_time=periods[-1].end,
+            {},rules,res_dispatch_inputs=res_inputs,projection=projection,immediate_ramping=rtbm_interval_minutes==30,storage_terminal_soc=storage_terminal_soc_mwh,terminal_time=periods[-1].end,
             mandatory_on={a.id:[mandatory[a.id][t]]*n for a in assets if a.technology=='thermal'},commitment={a.id:rows['assets'][a.id]['on'] for a in controllable if a.technology=='thermal'},reference=references,rtbm=True,res_forecasts={a.id:[actual[a.id][position] if current_known else forecast[a.id][t]]*n for a in assets if a.technology=='res'})['rows'][0]
-        result['system_prediction']=dict(predictions[0],measurement_index=position if current_known else measurement_index,input_basis='current_interval_inputs' if current_known else 'forecast_with_previous_observation')
+        result['system_prediction']=dict(predictions[0],measurement_index=position if current_known else measurement_index,input_basis='current_interval_inputs' if current_known else 'forecast_with_previous_observation',res_input_basis='forecast_projection' if projection else 'current_interval_available_or_fixed_metered_output')
         return result
     previous=deepcopy(previous_system_observation)
     for i,interval in enumerate(rtus):
@@ -285,11 +310,10 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
             if a.technology!='res':continue
             instruction=r['assets'][a.id]['down_mwh'];meter=actual[a.id][i]/rate
             if a.parameters['actual_generation_kind']=='available':
-                available=meter;scheduled=min(available,schedules[a.id][interval.period]/per_mtu)
-                commercial_curt=available-scheduled;delivered_down=min(instruction,scheduled)
-                meter=scheduled-delivered_down
+                available=meter;commercial_curt=0.;delivered_down=min(instruction,available)
+                meter=available-delivered_down
             else:
-                available=None;commercial_curt=r['assets'][a.id]['commercial_curtailment_mwh'];delivered_down=instruction
+                available=None;commercial_curt=0.;delivered_down=metered_curtailment[a.id][i]/rate
             r['RES_available_mwh'][a.id]=available
             r['RES_commercial_curtailment_mwh'][a.id]=commercial_curt
             r['RES_delivery_mwh'][a.id]=meter;r['RES_delivered_down_mwh'][a.id]=delivered_down
@@ -308,7 +332,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         # treating instructed curtailment as an unexplained weather error.
         observed_meter=observed_rtu['res'][i] if system_observations is not None else delivered_res
         observed_rtu['res'][i]=observed_meter
-        control_mw=rate*(sum(r['RES_delivered_down_mwh'].values())+sum(r['RES_commercial_curtailment_mwh'].values()))
+        control_mw=rate*sum(r['RES_delivered_down_mwh'].values())
         r['observed_system_res_metered_mw']=observed_meter
         r['system_observation']=dict(demand_mw=observed_rtu['demand'][i],res_mw=observed_meter+control_mw,
             forecast_demand_mw=tso_rtu['demand'][i],forecast_res_mw=tso_rtu['res'][i])
@@ -391,7 +415,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         '48_DAM_balances':all(abs(sum((1 if o.side=='sell' else -1)*dam['accepted_mwh'][o.id] for o in orders if o.period==t))<1e-5 for t in range(48)),
         'forecast_RTBM_balance':all(abs(sum(r['assets'][a.id]['power_mw'] for a in controllable)+r['res_dispatch_reference_mw']-r['res_curtailment_mw']+(r['slack']['energy_shortage_mwh']-r['slack']['energy_surplus_mwh'])/r['hours']-r['system_prediction']['demand_prediction_mw'])<1e-5 for r in rtbm),
         'observation_causality':all(r['system_prediction']['measurement_index']==(i if rtbm_interval_minutes==30 else i-1 if i else None) for i,r in enumerate(rtbm)),
-        'observation_prediction_formula':all(abs(r['system_prediction']['demand_prediction_mw']-max(0,r['system_prediction']['baseline_demand_mw']+r['system_prediction']['demand_error_mw']))<1e-7 and abs(r['system_prediction']['res_prediction_mw']-max(0,r['system_prediction']['baseline_res_mw']+r['system_prediction']['res_error_mw']))<1e-7 for i,r in enumerate(rtbm)),
+        'observation_prediction_formula':all(abs(r['system_prediction']['demand_prediction_mw']-max(0,r['system_prediction']['baseline_demand_mw']+r['system_prediction']['demand_error_mw']))<1e-7 and abs(r['system_prediction'].get('res_forecast_prediction_mw',r['system_prediction']['res_prediction_mw'])-max(0,r['system_prediction']['baseline_res_mw']+r['system_prediction']['res_error_mw']))<1e-7 for i,r in enumerate(rtbm)),
         'dispatch_equals_actual':all(r['assets'][a.id]['actual_mwh']==r['assets'][a.id]['energy_mwh'] for r in rtbm for a in controllable),
         ('initial_ISP_through_1155' if rtbm_interval_minutes==5 else 'initial_ISP_before_noon'):all(r['isp_run']=='ISP_initial' for r in rtbm[:12*60//rtbm_interval_minutes]),
         'new_ISP_from_noon':all(r['isp_run']=='ISP_1100' for r in rtbm[12*60//rtbm_interval_minutes:]),
@@ -443,13 +467,16 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     renewable_assets=[a for a in assets if a.technology=='res']
     checks['RES_down_only_no_capacity']=all(abs(r['assets'][a.id]['up_mwh'])<1e-8 and all(abs(v)<1e-8 for v in r['assets'][a.id]['reserve_mw'].values()) for r in rtbm for a in renewable_assets)
     checks['RES_reference_minus_instruction']=all(abs(r['assets'][a.id]['energy_mwh']-r['assets'][a.id]['reference_energy_mwh']+r['assets'][a.id]['down_mwh'])<1e-6 for r in rtbm for a in renewable_assets)
-    checks['RES_available_energy_conserved']=all(abs(r['RES_available_mwh'][a.id]-r['RES_delivery_mwh'][a.id]-r['RES_commercial_curtailment_mwh'][a.id]-r['RES_delivered_down_mwh'][a.id])<1e-6 for r in rtbm for a in renewable_assets if a.parameters['actual_generation_kind']=='available')
+    checks['RES_dispatch_equals_physical_delivery']=all(abs(r['assets'][a.id]['energy_mwh']-r['RES_delivery_mwh'][a.id])<1e-6 for r in rtbm for a in renewable_assets)
+    checks['RES_no_implicit_commercial_curtailment']=all(abs(r['RES_commercial_curtailment_mwh'][a.id])<1e-7 for r in rtbm for a in renewable_assets)
+    checks['RES_available_energy_conserved']=all(abs(r['RES_available_mwh'][a.id]-r['RES_delivery_mwh'][a.id]-r['RES_delivered_down_mwh'][a.id])<1e-6 for r in rtbm for a in renewable_assets if a.parameters['actual_generation_kind']=='available')
     checks['RES_instructed_settlement_quantity']=all(abs(m['INSTQ_mwh']-res_bridge(m['MSQ_mwh'],sum(r['RES_delivered_down_mwh'][m['asset']] for r in rtbm[m['period']*per_mtu:(m['period']+1)*per_mtu]),m['actual_mwh'],rules['settlement'],market.assets[m['asset']].parameters.get('grant_res',False))['INSTQ'])<1e-6 for m in meters if m['asset'] in {a.id for a in renewable_assets})
     checks['slack_nonnegative']=all(s['energy_shortage_mwh']>=-1e-7 and s['energy_surplus_mwh']>=-1e-7 and min(s['reserve_shortage_mw'].values(),default=0)>=-1e-7 for s in [r['slack'] for r in rtbm]+[s for run in runs for s in run['slack_by_period']])
     checks['latest_observed_error']=True
     for i,r in enumerate(rtbm):
         previous=previous_system_observation if i==0 else rtbm[i-1]['system_observation']
         expected=(observation_update(sum(actual[a.id][i] for a in assets if a.technology=='supplier'),sum(actual[a.id][i] for a in assets if a.technology=='res')) if rtbm_interval_minutes==30 else observation_update(tso_rtu['demand'][i],tso_rtu['res'][i],previous=previous))
+        if renewable_assets:expected['res_prediction_mw']=sum(actual[a.id][i]+metered_curtailment[a.id][i] for a in renewable_assets)
         checks['latest_observed_error'] &= all(abs(r['system_prediction'][k]-expected[k])<1e-7 for k in ('demand_prediction_mw','res_prediction_mw','demand_error_mw','res_error_mw'))
         if i:checks['latest_observed_error'] &= datetime.fromisoformat(rtbm[i-1]['system_observation_available_at'])<=datetime.fromisoformat(r['at'])
     prior={a.id:deepcopy(asdict(a.initial_state)) for a in controllable}
@@ -510,6 +537,10 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
         rtbm_forecast_method='TSO_baseline_plus_latest_completed_RTU_error',
         system_forecast_source=forecast_source,system_observation_source=observation_source,
         price_range_diagnostics_performed=price_ranges,
+        RES_baseline_policy='available_output_without_market_schedule_cap',
+        RES_available_input_timing='current_interval_known_at_RTBM_gate_no_future_actuals',
+        RES_metered_policy='fixed_delivery_no_new_curtailment_known_control_added_back',
+        RES_settlement_policy='commercial_reference_may_be_negative_zero_tolerance_INSTQ_minus_curtailment',
         actual_RES_semantics={a.id:a.parameters['actual_generation_kind'] for a in assets if a.technology=='res'},
         physical_security_feasible=all(run['physical_security_feasible'] for run in runs) and not slack_used([r['slack'] for r in rtbm]),
         ISP_slack_by_run={run['id']:run['slack_by_period'] for run in runs},
@@ -527,7 +558,7 @@ def run_market(market,time_index,reserve_requirements,price_forecast,historical_
     inputs=dict(time_index=[t.isoformat() for t in index],participants=[asdict(p) for p in participants.values()],
         assets=[dict(id=a.id,participant=a.participant,technology=a.technology,parameters=deepcopy(a.parameters),
             strategy=asdict(a.strategy),initial_state=asdict(a.initial_state) if a.initial_state is not None else None) for a in assets],
-        rtbm_interval_minutes=rtbm_interval_minutes,actual_input_interval_minutes=actual_input_minutes,source_actual_mw_5min=actual_fine,
+        rtbm_interval_minutes=rtbm_interval_minutes,actual_input_interval_minutes=actual_input_minutes,source_actual_mw_5min=actual_fine,metered_curtailment_mw=metered_curtailment,
         storage_terminal_soc_mwh=deepcopy(storage_terminal_soc_mwh),must_run=must_run,forecast_mw=forecast,actual_mw=actual,reserve_requirements_mw=requirements,
         system_forecast_mw=tso_rtu,system_observation_mw=observed_rtu,
         previous_system_observation=deepcopy(previous_system_observation),

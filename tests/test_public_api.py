@@ -160,6 +160,9 @@ class PublicDayTests(unittest.TestCase):
     def test_arbitrary_names_exact_delivery_and_no_future_actual_leak(self):
         a=example();b=example(100,20)
         a.assets['factory_load'].actual=[101.]*288
+        # Current RES availability is known at the gate; only later RES actuals
+        # differ here, so the first dispatch must still be identical.
+        a.assets['solar_east'].actual=[20.]+[19.]*287
         kwargs=dict(time_index=Market.time_index('2026-11-05'),reserve_requirements={'FCR_up':[1]*48},historical_rtbm_prices=HISTORY)
         r=a.run(**kwargs);other=b.run(**kwargs)
         self.assertTrue(r.audit['passed'],r.audit)
@@ -168,7 +171,7 @@ class PublicDayTests(unittest.TestCase):
                          {a:{k:v for k,v in row.items() if k!='actual_mwh'} for a,row in other.rtbm[0]['assets'].items()})
         self.assertAlmostEqual(r.rtbm[1]['system_prediction']['net_demand_prediction_mw'],82)
         self.assertAlmostEqual(other.rtbm[1]['system_prediction']['net_demand_prediction_mw'],80)
-        self.assertAlmostEqual(r.manifest['physical_imbalance_mwh'],2/12,places=5)
+        self.assertAlmostEqual(r.manifest['physical_imbalance_mwh'],1/12,places=5)
         self.assertAlmostEqual(other.manifest['physical_imbalance_mwh'],0)
         self.assertAlmostEqual(r.ending_states['battery_west']['soc_mwh'],20)
         self.assertEqual(r.ending_states['unit_blue']['time_in_stage_minutes'],1920)

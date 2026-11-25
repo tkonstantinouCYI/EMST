@@ -332,3 +332,11 @@ performance promise.
 An additional `warm_start_source="lp"` option uses the current ISP's LP
 relaxation to guide repair before the unrestricted MILP. See
 [LP-guided warm starts and the ten-unit comparison](docs/lp-guided-warm-starts.md).
+
+RES output is no longer capped at the accepted commercial schedule. See the
+[RES availability and settlement policy](docs/res-availability.md) for available
+versus metered inputs, explicit curtailment and reproducible examples:
+
+```shell
+python examples/res_availability_day.py
+```

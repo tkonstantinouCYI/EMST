@@ -14,7 +14,7 @@ from . import onoff
 
 
 @stage(lambda *args,**kwargs: 'RTBM_projection' if kwargs.get('projection',False) else 'RTBM' if kwargs.get('rtbm',False) else 'ISP')
-def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None,terminal_time=None,projection=False,immediate_ramping=False,warm_start_seed=None,initial_shutdown_allowed=None,delivery_interval_minutes=None):
+def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,commitment=None,reference=None,rtbm=False,price_ranges=False,storage_terminal_soc=None,res_forecasts=None,mandatory_on=None,terminal_time=None,projection=False,immediate_ramping=False,warm_start_seed=None,initial_shutdown_allowed=None,delivery_interval_minutes=None,res_dispatch_inputs=None):
     thermal=[a for a in assets if a.technology=="thermal"]
     storage=[a for a in assets if a.technology=="storage"]
     renewables=[a for a in assets if a.technology=='res']
@@ -193,12 +193,20 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
         for i,a in enumerate(renewables):
             k=a.id,j
             available=res[j]*weights[a.id]/total
-            baseline=min(available,commercial[a.id][j]/t.hours)
+            data=(res_dispatch_inputs or {}).get(a.id)
+            fixed_curtailment=None
+            if data is not None:
+                output=data['output_mw'][j]
+                fixed_curtailment=data.get('known_curtailment_mw',[0.]*len(intervals))[j] if data['kind']=='metered' else None
+                available=output+(fixed_curtailment or 0.)
+            baseline=max(0.,available)
             res_available[k]=available;res_base[k]=baseline
             commercial_curt[j]+=available-baseline
             up[k]=lp.LpVariable(f'RES_up_{i}_{j}',0,0)
             m+=up[k]==0
-            down[k]=lp.LpVariable(f'RES_down_{i}_{j}',0,baseline*t.hours if rules.get('res',{}).get('participation_balancing_energy',True) else 0)
+            lower=0. if fixed_curtailment is None else fixed_curtailment*t.hours
+            upper=(baseline*t.hours if rules.get('res',{}).get('participation_balancing_energy',True) else 0.) if fixed_curtailment is None else lower
+            down[k]=lp.LpVariable(f'RES_down_{i}_{j}',lower,upper)
             p[k]=baseline-down[k]/t.hours
             if not rtbm:
                 for product in PRODUCTS:
@@ -206,7 +214,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
                     m+=reserve[a.id,j,product]==0
             curt[j]+=down[k]/t.hours
             terms.append(-a.parameters['energy_down_price']*down[k])
-        m+=lp.lpSum(p[a.id,j] for a in thermal+storage)+res[j]-commercial_curt[j]-curt[j]+(shortage[j]-surplus[j])/t.hours==demand[j],f"energy_{j}"
+        m+=lp.lpSum(p[a.id,j] for a in thermal+storage)+lp.lpSum(res_base[a.id,j] for a in renewables)-curt[j]+(res[j] if not renewables else 0)+(shortage[j]-surplus[j])/t.hours==demand[j],f"energy_{j}"
         if not rtbm:
             for product in PRODUCTS:
                 m+=lp.lpSum(reserve[a.id,j,product] for a in thermal+storage)+reserve_shortage[product,j]>=requirements[product][j],f"requirement_{product}_{j}"
@@ -317,7 +325,7 @@ def dispatch(assets,states,intervals,demand,res,commercial,requirements,rules,*,
             group[a.id]=row
         rows.append(dict(period=t.period,at=t.start.isoformat(),hours=t.hours,assets=group,
                          res_curtailment_mw=float(lp.value(curt[j])),res_commercial_curtailment_mw=commercial_curt[j],
-                         res_dispatch_reference_mw=res[j]-commercial_curt[j],slack=slack_quantities(j,shortage,surplus,reserve_shortage),
+                         res_dispatch_reference_mw=sum(res_base[a.id,j] for a in renewables) if renewables else res[j],slack=slack_quantities(j,shortage,surplus,reserve_shortage),
                          price_eur_mwh=prices[j],reserve_prices=reserve_prices[j],smoothing=deepcopy(smoothing)))
     objective_components=None
     if not rtbm:

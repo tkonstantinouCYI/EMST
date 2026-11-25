@@ -1,6 +1,7 @@
 """Energy classifications, source-labelled cash and an append-only Decimal ledger."""
 from dataclasses import dataclass, asdict
 from decimal import Decimal, ROUND_HALF_UP
+import math
 import hashlib
 import json
 
@@ -109,7 +110,14 @@ def res_bridge(msq, down, metered, settlement=None, grant_res=False):
     """RES instruction/meter bridge; policy tolerance is a fraction of instruction."""
     tolerances=(settlement or {}).get("res_tolerance", {"commercial":0.,"grant_supported":0.})
     tolerance=tolerances["grant_supported" if grant_res else "commercial"]
-    return {**production_bridge(msq,0,down,metered,tolerance), "tolerance": tolerance}
+    if min(down,metered)<-1e-7 or not all(math.isfinite(v) for v in (msq,down,metered)) or not 0<=tolerance<1:
+        raise ValueError("RES delivery and curtailment must be finite and nonnegative")
+    reference=msq-down
+    # A negative commercial reference is not negative physical production.
+    band=abs(reference)*tolerance
+    inst=min(max(metered,reference-band),reference+band)-msq
+    return dict(MSQ=msq,INST=reference,MQ=metered,INSTQ=inst,
+        UNINSTQ=metered-inst-msq,branch="ordinary_tolerance",tolerance=tolerance)
 
 
 def offtake_bridge(msq,metered,instq=0,tolerance=None):

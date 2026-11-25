@@ -145,7 +145,7 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
     series_assets={a.id for a in market.assets.values() if a.technology in ('res','supplier')}
     allowed={'forecasts','actuals','forwards','reserve_requirements','price_forecast',
         'historical_rtbm_prices','price_ranges','system_forecasts','system_observations',
-        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh','rtbm_interval_minutes','isp_interval_minutes'}
+        'previous_system_observation','metered_curtailment_mw','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh','rtbm_interval_minutes','isp_interval_minutes'}
     for day in dates:
         if day not in daily:raise ValueError(f'Missing scenario for {day}')
         data=daily[day]
@@ -195,6 +195,13 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
             if candidate_shares is not None and candidate_shares!=procurement['supplier_shares']:
                 raise ValueError('Cannot change precleared monthly supplier shares')
             data['must_run_supplier_shares']=procurement['supplier_shares']
+        for a in working.assets.values():
+            if a.technology=='res':a.metered_curtailment=deepcopy(market.assets[a.id].metered_curtailment)
+        controls=data.pop('metered_curtailment_mw',{})
+        for aid,values in controls.items():
+            if aid not in working.assets or working.assets[aid].technology!='res' or working.assets[aid].parameters['actual_generation_kind']!='metered':
+                raise ValueError('Daily metered curtailment requires a metered RES asset')
+            working.assets[aid].metered_curtailment=values
         for a in working.assets.values():
             if a.id in series_assets:
                 a.forecast=data['forecasts'][a.id];a.actual=data['actuals'][a.id]

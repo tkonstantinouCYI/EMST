@@ -123,7 +123,7 @@ def clear_rtu(interval, units, state, isp_rows, commercial_mwh, demand_mw, res_m
         res_terms=curtail*.001
     else:
         for i,offer in enumerate(res_energy_offers):
-            baseline=min(offer['available_mwh'],offer['commercial_mwh'])
+            baseline=max(0.,offer['available_mwh'])
             commercial_curt+=offer['available_mwh']-baseline
             market_down[offer['id']]=lp.LpVariable(f'RES_down_mwh_{i}',0,baseline)
         curtail=lp.lpSum(market_down.values())
@@ -177,7 +177,7 @@ def clear_rtu(interval, units, state, isp_rows, commercial_mwh, demand_mw, res_m
         delivered_total=0.
         for o in res_energy_offers:
             share=o['available_mwh']/forecast_pool if forecast_pool>1e-12 else 1/max(1,len(res_energy_offers))
-            available=actual_pool*share;baseline=min(available,o['commercial_mwh'])
+            available=actual_pool*share;baseline=available
             actual_commercial_curt+=available-baseline
             awarded=market_down[o['id']].value()
             if awarded < -1e-5:raise RuntimeError('RES downward award violates nonnegative bound')

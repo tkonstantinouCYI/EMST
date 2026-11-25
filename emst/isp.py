@@ -54,7 +54,7 @@ def schedule(units, periods, demand_mw, res_mw, commercial_mwh, requirements,
         for offer in res_energy_offers:
             for j,t in enumerate(periods):
                 available=offer['forecast_mw'][j]
-                base=min(available,offer['commercial_mwh'][j]/t.hours)
+                base=max(0.,available)
                 res_baseline[offer['id'],j]=base
                 commercial_curt[j]+=available-base
                 res_down[offer['id'],j]=lp.LpVariable(f"RES_down_{offer['id']}_{j}",0,base*t.hours)
