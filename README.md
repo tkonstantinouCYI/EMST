@@ -264,6 +264,21 @@ See [inputs, timing/accuracy comparison and limitations](docs/rtbm-resolution.md
 
 ## Combined-cycle plant configurations
 
+For an explicitly simplified **single-envelope CCGT** and one-binary ON/OFF
+commitment, see [ON/OFF thermals and native hourly ISP](docs/onoff-thermal.md).
+The options are independent of the configured-plant model below. Staged startup
+and the half-hour ISP remain the defaults.
+
+```sh
+python examples/onoff_day.py --isp-interval-minutes 30 --output output/onoff30
+python examples/onoff_day.py --isp-interval-minutes 60 --output output/onoff60
+```
+
+These synthetic examples use 30-minute sequential RTBM and save raw/readable
+results with financial positions. Hourly ON/OFF runs use 24 initial and 12 noon
+ISP intervals with half-hour commercial accounting. This is a physical
+approximation, not an exact substitute for staged/configured commitment.
+
 Use `Market.add_configured_thermal()` for one physical plant with mutually
 exclusive operating configurations, explicit transition profiles/costs, and
 component minimum up/down histories. ISP selects the configuration; both RTBM
@@ -289,8 +304,9 @@ python examples/configured_plant.py --configuration-formulation compact --transi
 See [transition-capacity inputs and limits](docs/configured-plants.md#reserve-capacity-during-transitions).
 For reproducible initial-ISP timing experiments with one three-configuration CC
 plant and 24 hourly intervals, run `python tools/benchmark_cc_transition_reserves.py`.
-The [hourly experiment](docs/hourly-virtual-cc-experiment.md) is a standalone
-approximation; the public daily `Market.run()` ISP still uses half-hour intervals.
+The [configured-plant hourly experiment](docs/hourly-virtual-cc-experiment.md) remains
+standalone. The public daily ISP defaults to half-hours; native hourly integration
+is now available for the separate ON/OFF ordinary-thermal approximation.
 
 ## Optional compact configured-plant commitment
 

@@ -97,6 +97,8 @@ def _asset_interval(row, asset, timestamp):
             fields[target] = row[source]
     for key in ('configuration','configuration_state','configuration_binaries','configuration_transition','online_components','transition_cost_eur','configuration_operating_adjustment_eur','configuration_endpoint_mw'):
         if key in row:fields[key]=deepcopy(row[key])
+    for key in ('commitment_model','boundary_minimum','first_on_interval','last_on_interval','boundary_power_policy','boundary_reserve_policy','power_convention'):
+        if key in row:fields[key]=deepcopy(row[key])
     return fields
 
 
@@ -143,11 +145,16 @@ def _shared(result):
                     (a['up_offer_eur_mwh'] for a in row['assets'].values() if a['up_mwh'] > 1e-7), default=None),
                 indicative_downward_offer_price_eur_mwh=min(
                     (a['down_offer_eur_mwh'] for a in row['assets'].values() if a['down_mwh'] > 1e-7), default=None),
-                reserve_requirements_mw={p: result.inputs['reserve_requirements_mw'][p][row['period']]
+                reserve_requirements_mw={p: max(result.inputs['reserve_requirements_mw'][p][row['period']:row['period']+round(row['hours']/.5)])
                                          for p in awards},
                 procured_reserve_mw=awards, reserve_prices_eur_mw_period=deepcopy(row['reserve_prices']),
                 slack=deepcopy(row['slack'])))
         runs.append(dict(run_id=run['id'], summary=dict(solved_at=run['cutoff'], intervals=intervals)))
+        if 'commitment_models' in run:
+            runs[-1]['summary'].update(isp_interval_minutes=run['isp_interval_minutes'],
+                thermal_models=sorted(set(run['commitment_models'].values())),thermal_state_binary_count=run['thermal_state_binary_count'],
+                binary_variable_count=run.get('binary_variable_count'),power_convention=run['power_convention'],
+                duration_rounding=run['duration_rounding'])
     stages['isp'] = dict(runs=runs)
     intervals = []
     for row in result.rtbm:
@@ -242,7 +249,7 @@ def _participant(result, participant):
             for asset in sorted(assets & row['assets'].keys()):
                 record = _asset_interval(row['assets'][asset], asset, _interval(row['at'], row['hours'], row['period']))
                 record.update(effective_for_dispatch=active.get(row['period']) == run['id'],
-                              market_schedule_mwh=schedules[asset, row['period']]['MSQ_mwh'],
+                              market_schedule_mwh=sum(schedules[asset,p]['MSQ_mwh'] for p in range(row['period'],row['period']+round(row['hours']/.5))),
                               reserved_capacity_mw=deepcopy(row['assets'][asset]['reserve_mw']))
                 record['scheduled_energy_mwh'] = record.pop('instructed_energy_mwh')
                 record['dispatch_power_mw'] = record.pop('average_power_mw')
@@ -250,7 +257,7 @@ def _participant(result, participant):
                 records.append(record)
             for asset in sorted(assets - row['assets'].keys()):
                 records.append(dict(_interval(row['at'], row['hours'], row['period']),
-                    asset_id=asset, market_schedule_mwh=schedules[asset, row['period']]['MSQ_mwh'],
+                    asset_id=asset, market_schedule_mwh=sum(schedules[asset,p]['MSQ_mwh'] for p in range(row['period'],row['period']+round(row['hours']/.5))),
                     effective_for_dispatch=active.get(row['period']) == run['id']))
         runs.append(dict(run_id=run['id'], intervals=records))
     stages['isp'] = dict(runs=runs)
@@ -327,6 +334,8 @@ def readable_results(result, *, audience='shared', participant=None):
         cash_convention='positive_receipt_negative_payment',
         simulation_summary=dict(period_start=day, period_end=day,
             days=[dict(date=day, summary=dict(audit_passed=result.audit['passed'],
+                **({key:deepcopy(result.manifest[key]) for key in ('isp_interval_minutes','isp_research_approximation','on_off_power_convention',
+                    'on_off_boundary_power_policy','on_off_boundary_reserve_policy','minimum_duration_rounding') if key in result.manifest}),
                 trading_intervals=len(result.inputs['time_index']), rtbm_intervals=len(result.rtbm),
                 rtbm_interval_minutes=result.manifest.get('rtbm_interval_minutes',5),
                 rtbm_research_approximation=result.manifest.get('rtbm_research_approximation',False),

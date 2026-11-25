@@ -586,6 +586,20 @@ apply to the default five-minute RTBM.
 
 ## Configuration-based thermal plants
 
+For a single-envelope CCGT, use ordinary `add_thermal()` with explicit plant MW,
+cost and duration inputs. Ordinary thermal registration also accepts
+`commitment_model="on_off"`, `boundary_power_policy="technical_minimum"`,
+`boundary_reserve_policy="none"` and optional `ramp_up_mw_hour` /
+`ramp_down_mw_hour` overrides. The library default remains staged commitment.
+ON/OFF uses one binary per effective ISP interval and constant interval MW.
+
+`Market.run(isp_interval_minutes=60, rtbm_interval_minutes=30, ...)` supports
+native hourly initial/noon ISP with half-hour market accounting for ON/OFF
+thermal/RES/load portfolios. Default `isp_interval_minutes=30` is unchanged.
+Configured/staged plants and storage retain the 30-minute public ISP; ON/OFF
+delivery currently requires 30-minute sequential RTBM. See
+[full policies, carryover and examples](onoff-thermal.md).
+
 `Market.add_configured_thermal(id, participant, *, components, configurations,
 transitions, initial_state, dam_price=None, energy_up_price=None,
 energy_down_price=None, reserve_cost=2., reserve_prices=None, strategy=None,

@@ -136,10 +136,16 @@ def run_period(market,start,end,scenario,checkpoint_directory,resume_from=None,m
     if resume_from and state.get('rtbm_interval_minutes',5)!=minutes:
         raise ValueError('Cannot change RTBM resolution on resume')
     state['rtbm_interval_minutes']=minutes
+    isp_resolutions={daily[d].get('isp_interval_minutes',30) for d in dates if d in daily}
+    if len(isp_resolutions)>1:raise ValueError('Multi-day execution requires one consistent ISP resolution')
+    isp_minutes=next(iter(isp_resolutions),30)
+    if type(isp_minutes) is not int or isp_minutes not in (30,60):raise ValueError('ISP resolution must be 30 or 60')
+    if resume_from and state.get('isp_interval_minutes',30)!=isp_minutes:raise ValueError('Cannot change ISP resolution on resume')
+    state['isp_interval_minutes']=isp_minutes
     series_assets={a.id for a in market.assets.values() if a.technology in ('res','supplier')}
     allowed={'forecasts','actuals','forwards','reserve_requirements','price_forecast',
         'historical_rtbm_prices','price_ranges','system_forecasts','system_observations',
-        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh','rtbm_interval_minutes'}
+        'previous_system_observation','must_run_requirement_mw','must_run_supplier_shares','actual_balance_tolerance_mwh','storage_terminal_soc_mwh','rtbm_interval_minutes','isp_interval_minutes'}
     for day in dates:
         if day not in daily:raise ValueError(f'Missing scenario for {day}')
         data=daily[day]

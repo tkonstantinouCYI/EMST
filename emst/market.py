@@ -144,7 +144,14 @@ class Market:
                     startup_cost=0.,no_load_cost_per_hour=0.,reserve_cost=2.,reserve_limit_mw=None,
                     startup_minutes=0,shutdown_minutes=0,strategy=None,strategy_parameters=None,
                     energy_up_price=None,energy_down_price=None,reserve_prices=None,phase_profiles_mw=None,
-                    must_run_participation=False,must_run_offer_eur_per_mtu=0.):
+                    must_run_participation=False,must_run_offer_eur_per_mtu=0.,commitment_model='staged',
+                    boundary_power_policy=None,boundary_reserve_policy=None,ramp_up_mw_hour=None,ramp_down_mw_hour=None):
+        if commitment_model not in ('staged','on_off'):raise ValueError('commitment_model must be staged or on_off')
+        if commitment_model=='on_off':
+            if boundary_power_policy not in (None,'technical_minimum') or boundary_reserve_policy not in (None,'none'):
+                raise ValueError('ON/OFF supports technical_minimum power and none reserves at boundary intervals')
+        elif boundary_power_policy is not None or boundary_reserve_policy is not None or ramp_up_mw_hour is not None or ramp_down_mw_hour is not None:
+            raise ValueError('Boundary policies and asymmetric ramps require commitment_model=on_off')
         if type(must_run_participation) is not bool:raise ValueError('must_run_participation must be boolean')
         if isinstance(must_run_offer_eur_per_mtu,bool) or not math.isfinite(must_run_offer_eur_per_mtu) or must_run_offer_eur_per_mtu<0:
             raise ValueError('Must-run offer must be finite nonnegative EUR/unit/MTU')
@@ -152,6 +159,7 @@ class Market:
         state=ThermalState(**initial_state) if isinstance(initial_state,dict) else initial_state
         if not isinstance(state,ThermalState):raise ValueError('Thermal initial_state is required')
         stage=canonical(state.stage)
+        if commitment_model=='on_off' and stage not in ('dispatch','offline'):raise ValueError('ON/OFF initial stage must be dispatch or offline')
         state=ThermalState(stage,state.power_mw,state.time_in_stage_minutes)
         _finite_state((state.power_mw,state.time_in_stage_minutes))
         if any(a.technology=='thermal' and a.participant==participant for a in self.assets.values()):
@@ -169,7 +177,14 @@ class Market:
         bid=selected.price('thermal',marginal_cost,self.ruleset.to_dict())
         energy_prices(bid if energy_up_price is None else energy_up_price,bid if energy_down_price is None else energy_down_price)
         quotes=make_reserve_prices(reserve_cost,reserve_prices)
-        return self._add(id,participant,"thermal",selected,dict(
+        extra={}
+        if commitment_model=='on_off':
+            ru=ramp_mw_hour if ramp_up_mw_hour is None else ramp_up_mw_hour
+            rd=ramp_mw_hour if ramp_down_mw_hour is None else ramp_down_mw_hour
+            if any(isinstance(x,bool) or not math.isfinite(x) or x<=0 for x in (ru,rd)):raise ValueError('ON/OFF directional ramps must be finite positive')
+            extra=dict(commitment_model='on_off',boundary_power_policy='technical_minimum',boundary_reserve_policy='none',
+                ramp_up_mw_hour=ru,ramp_down_mw_hour=rd,plant_representation='single_envelope')
+        return self._add(id,participant,"thermal",selected,dict(**extra,
             capacity_mw=capacity_mw,minimum_mw=minimum_mw,marginal_cost=marginal_cost,ramp_mw_hour=ramp_mw_hour,
             minimum_up_minutes=minimum_up_minutes,minimum_down_minutes=minimum_down_minutes,startup_cost=startup_cost,
             no_load_cost_per_hour=no_load_cost_per_hour,reserve_cost=reserve_cost,
@@ -248,7 +263,7 @@ class Market:
     def run(self,*,time_index,reserve_requirements=None,price_forecast=None,historical_rtbm_prices=None,price_ranges=False,accounting_cycles=False,
             system_forecasts=None,system_observations=None,previous_system_observation=None,
             must_run_requirement_mw=None,must_run_supplier_shares=None,actual_balance_tolerance_mwh=1e-6,
-            storage_terminal_soc_mwh=None,rtbm_interval_minutes=5,isp_warm_start=None):
+            storage_terminal_soc_mwh=None,rtbm_interval_minutes=5,isp_warm_start=None,isp_interval_minutes=30):
         if accounting_cycles:raise NotImplementedError("The generic participant API currently runs daily settlement; full historical accounting remains available through emst.runner")
         from .resolution import validate_minutes
         validate_minutes(rtbm_interval_minutes)
@@ -263,7 +278,7 @@ class Market:
         with session(self.solver_config) as context:
             result=run_market(self,time_index,reserve_requirements,price_forecast,historical_rtbm_prices,price_ranges,
                 system_forecasts,system_observations,previous_system_observation,must_run_requirement_mw,must_run_supplier_shares,
-                storage_terminal_soc_mwh,rtbm_interval_minutes,isp_warm_start)
+                storage_terminal_soc_mwh,rtbm_interval_minutes,isp_warm_start,isp_interval_minutes)
         return enrich(result,self,context['records'],actual_balance_tolerance_mwh)
 
     def evaluate(self,**inputs):
